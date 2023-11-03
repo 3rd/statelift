@@ -1,5 +1,5 @@
 {
-  "name": "farm-react",
+  "name": "store-experiment",
   "version": "1.0.0",
   "scripts": {
     "dev": "farm start",

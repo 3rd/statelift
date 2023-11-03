@@ -1,12 +1,15 @@
 {
   "compilerOptions": {
+    "target": "ESNext",
     "lib": ["DOM", "ES2023"],
     "noEmit": true,
     "esModuleInterop": true,
     "jsx": "react",
     "skipDefaultLibCheck": true,
     "skipLibCheck": true,
-    "strict": true
+    "strict": true,
+    "downlevelIteration": true,
+    "moduleResolution": "NodeNext"
   },
   "include": ["src"],
   "exclude": ["node_modules"]
