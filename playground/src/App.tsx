@@ -1,7 +1,6 @@
 import React from "react";
 import { useProxyState } from "reactlift";
 import { useRenderCount } from "./devhooks";
-import { testStore } from "./test-store";
 import { Test } from "./Test";
 
 const data = {
@@ -34,9 +33,7 @@ const App = () => {
         <button onClick={handleSimpleClickA}>simple.a: {simple.nested.a}</button>
         <button onClick={handleSimpleClickB}>simple.b: {simple.nested.b}</button>
       </div>
-      <testStore.Provider>
-        <Test />
-      </testStore.Provider>
+      <Test />
     </>
   );
 };

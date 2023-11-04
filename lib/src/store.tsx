@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { createContext, useMemo, useRef, useSyncExternalStore } from "react";
+import { useMemo, useRef, useSyncExternalStore } from "react";
 import { ProxyCacheValue, createDeepProxy } from "./proxy";
-
-const STORE_INTERNAL = Symbol("STORE_INTERNAL");
 
 type Computable<T extends {}> = (state: T) => unknown;
 type Computables<T extends {}> = Record<string, Computable<T>> & { [K in keyof T]?: never };
@@ -23,11 +21,10 @@ type Store<T extends {}, C extends Computables<T>, A extends Actions<T, C>> = {
   state: T;
   computed: C;
   actions: WrappedActions<A>;
-  Provider: React.FC<{ children: React.ReactNode }>;
-  [STORE_INTERNAL]: {
-    manager: StoreManager<T, C, A>;
-    context: React.Context<Store<T, C, A>>;
-  };
+  subscribe: <K extends keyof StoreManager<any, any, any>["watchers"]>(
+    event: K,
+    watcher: (...args: any[]) => void
+  ) => () => void;
 };
 
 interface StoreOptions<T extends {}, C extends Computables<T>, A extends Actions<T, C>> {
@@ -122,33 +119,20 @@ export const createStore = <T extends {}, C extends Computables<T>, A extends Ac
     })
   ) as WrappedActions<A>;
 
-  const api = {
+  return {
     state: manager.state,
     actions: wrappedActions,
     computed: manager.computables,
+    subscribe: manager.subscribe.bind(manager),
   } as Store<T, C, A>;
-
-  const context = createContext<Store<T, C, A>>(api);
-  api.Provider = ({ children }: { children: React.ReactNode }) => {
-    return <context.Provider value={api}>{children}</context.Provider>;
-  };
-
-  api[STORE_INTERNAL] = {
-    manager,
-    context,
-  };
-
-  return api;
 };
 
 let useStoreHelperCount = 0;
 export const useStore = <T extends {}, C extends Computables<T>, A extends Actions<T, C>>(store: Store<T, C, A>) => {
-  const context = React.useContext(store[STORE_INTERNAL].context);
   const updateRef = useRef({});
 
   const singleton = useMemo(() => {
     const symbol = Symbol(`useStore:${++useStoreHelperCount}`);
-    const manager = store[STORE_INTERNAL].manager;
     const observedPropertiesMap = new WeakMap<any, Set<string | symbol>>();
 
     const handleGet = (_: ProxyCacheValue, target: any, key: string | symbol) => {
@@ -167,7 +151,7 @@ export const useStore = <T extends {}, C extends Computables<T>, A extends Actio
         callback();
       };
 
-    const accessProxy = createDeepProxy(manager.state, {
+    const accessProxy = createDeepProxy(store.state, {
       rootSymbol: symbol,
       callbacks: {
         get: handleGet,
@@ -177,8 +161,8 @@ export const useStore = <T extends {}, C extends Computables<T>, A extends Actio
     const subscribe = (callback: () => void) => {
       const subscriptions: (() => void)[] = [];
       const handleManagerUpdate = createHandleManagerUpdate(callback);
-      subscriptions.push(manager.subscribe("set", handleManagerUpdate));
-      subscriptions.push(manager.subscribe("delete", handleManagerUpdate));
+      subscriptions.push(store.subscribe("set", handleManagerUpdate));
+      subscriptions.push(store.subscribe("delete", handleManagerUpdate));
 
       return () => {
         for (const unsubscribe of subscriptions) {
@@ -187,7 +171,7 @@ export const useStore = <T extends {}, C extends Computables<T>, A extends Actio
       };
     };
 
-    return { manager, subscribe, accessProxy };
+    return { subscribe, accessProxy };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -195,7 +179,7 @@ export const useStore = <T extends {}, C extends Computables<T>, A extends Actio
 
   return {
     state: singleton.accessProxy,
-    actions: context.actions,
-    computed: context.computed,
+    actions: store.actions,
+    computed: store.computed,
   };
 };
