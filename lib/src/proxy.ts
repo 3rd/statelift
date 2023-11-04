@@ -1,5 +1,4 @@
 /* eslint-disable no-param-reassign */
-
 const SYMBOL_KEY = Symbol("symbol");
 
 type ProxyCallbacks = {

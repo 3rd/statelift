@@ -1,5 +1,5 @@
 import React from "react";
-import { useProxyState } from "./lib";
+import { useProxyState } from "reactlift";
 import { useRenderCount } from "./devhooks";
 import { testStore } from "./test-store";
 import { Test } from "./Test";

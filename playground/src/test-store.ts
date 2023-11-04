@@ -1,5 +1,5 @@
 /* eslint-disable no-param-reassign */
-import { createStore } from "./lib";
+import { createStore } from "reactlift";
 
 export const testStore = createStore(
   { nested: { a: 0, b: 0 } },

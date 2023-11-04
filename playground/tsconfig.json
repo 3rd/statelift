@@ -9,7 +9,10 @@
     "skipLibCheck": true,
     "strict": true,
     "downlevelIteration": true,
-    "moduleResolution": "NodeNext"
+    "moduleResolution": "Node",
+    "paths": {
+      "reactlift": ["../lib/src/index.ts"]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]
