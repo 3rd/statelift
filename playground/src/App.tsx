@@ -4,7 +4,7 @@ import { useRenderCount } from "./devhooks";
 import { Test } from "./Test";
 
 const data = {
-  nested: { a: 0, b: 0 },
+  simple: { a: 0, b: 0 },
 };
 
 const App = () => {
@@ -17,11 +17,11 @@ const App = () => {
   };
 
   const handleSimpleClickA = () => {
-    simple.nested.a++;
+    simple.simple.a++;
   };
 
   const handleSimpleClickB = () => {
-    simple.nested.b++;
+    simple.simple.b++;
   };
 
   return (
@@ -30,8 +30,8 @@ const App = () => {
       <div>App render count: {renderCount}</div>
       <button onClick={handleIncrease}>count: {count}</button>
       <div>
-        <button onClick={handleSimpleClickA}>simple.a: {simple.nested.a}</button>
-        <button onClick={handleSimpleClickB}>simple.b: {simple.nested.b}</button>
+        <button onClick={handleSimpleClickA}>simple.a: {simple.simple.a}</button>
+        <button onClick={handleSimpleClickB}>simple.b: {simple.simple.b}</button>
       </div>
       <Test />
     </>

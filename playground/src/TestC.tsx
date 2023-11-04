@@ -12,10 +12,10 @@ export const TestC = () => {
     <div style={{ border: "2px dashed #242424", padding: "1rem" }}>
       <h2>C</h2>
       <p>renders: {renderCount}</p>
-      <p>store.state.a: {store.state.nested.a}</p>
-      <p>store.state.b: {store.state.nested.b}</p>
-      <button onClick={() => store.state.nested.a++}>Increase A</button>
-      <button onClick={() => store.state.nested.b++}>Increase B</button>
+      <p>store.state.a: {store.nested.a}</p>
+      <p>store.state.b: {store.nested.b}</p>
+      <button onClick={() => store.nested.a++}>Increase A</button>
+      <button onClick={() => store.nested.b++}>Increase B</button>
     </div>
   );
 };

@@ -2,52 +2,47 @@
 import { useMemo, useRef, useSyncExternalStore } from "react";
 import { ProxyCacheValue, createDeepProxy } from "./proxy";
 
-type Computable<T extends {}> = (state: T) => unknown;
-type Computables<T extends {}> = Record<string, Computable<T>> & { [K in keyof T]?: never };
-type ComputedState<T extends {}, C extends Computables<T>> = {
-  [K in keyof C]: ReturnType<C[K]>;
+type StoreData<T> = T | ((root: T) => T);
+
+type Store<T extends {}> = {
+  state: StoreData<T>;
+  subscribe: <K extends keyof StoreManager<any>["watchers"]>(event: K, watcher: (...args: any[]) => void) => () => void;
 };
 
-type Action<T extends {}, C extends Computables<T>> = (
-  context: { state: T; computed: ComputedState<T, C> },
-  ...args: any[]
-) => void;
-type Actions<T extends {}, C extends Computables<T>> = Record<string, Action<T, C>>;
-type WrappedActions<A extends Actions<any, any>> = {
-  [K in keyof A]: A[K] extends (context: any, ...args: infer P) => infer R ? (...args: P) => R : never;
-};
+function createStoreData<T extends {}>(data: StoreData<T>): T {
+  if (typeof data === "function") {
+    const fnData: (root: T) => T = data as (root: T) => T;
 
-type Store<T extends {}, C extends Computables<T>, A extends Actions<T, C>> = {
-  state: T;
-  computed: C;
-  actions: WrappedActions<A>;
-  subscribe: <K extends keyof StoreManager<any, any, any>["watchers"]>(
-    event: K,
-    watcher: (...args: any[]) => void
-  ) => () => void;
-};
+    const handler: ProxyHandler<T> = {
+      get(target, prop, receiver) {
+        return Reflect.get(target, prop, receiver);
+      },
+    };
 
-interface StoreOptions<T extends {}, C extends Computables<T>, A extends Actions<T, C>> {
-  target: T;
-  computables?: C;
-  actions?: A;
+    const lazyRoot = new Proxy({}, handler) as T;
+    const result = fnData(lazyRoot);
+
+    handler.get = (_target, prop, receiver) => {
+      return Reflect.get(result, prop, receiver);
+    };
+    return lazyRoot as T;
+  }
+  return data;
 }
 
-class StoreManager<
-  TState extends {},
-  TComputables extends Computables<TState>,
-  TActions extends Actions<TState, TComputables>,
-> {
+interface StoreOptions<T extends {}> {
+  target: T;
+}
+
+class StoreManager<TState extends {}> {
   state: TState;
-  computables = {} as TComputables;
-  actions = {} as TActions;
   watchers = {
     get: new Set<(proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => void>(),
     set: new Set<(proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => void>(),
     delete: new Set<(proxy: ProxyCacheValue, target: {}, key: string | symbol) => void>(),
   };
 
-  constructor({ target, computables, actions }: StoreOptions<TState, TComputables, TActions>) {
+  constructor({ target }: StoreOptions<TState>) {
     this.state = createDeepProxy(target, {
       callbacks: {
         get: this.handleGet,
@@ -55,8 +50,6 @@ class StoreManager<
         delete: this.handleDelete,
       },
     });
-    if (computables) this.computables = computables;
-    if (actions) this.actions = actions;
   }
 
   private handleGet = (proxy: ProxyCacheValue, target: any, key: string | symbol, value: any) => {
@@ -88,64 +81,36 @@ class StoreManager<
   }
 }
 
-export const createStore = <T extends {}, C extends Computables<T>, A extends Actions<T, C>>(
-  target: T,
-  options?: { computed?: C; actions?: A }
-): Store<T, C, A> => {
-  const manager = new StoreManager<T, C, A>({
-    target,
-    computables: options?.computed,
-    actions: options?.actions,
+export const createStore = <T extends {}>(target: T): Store<T> => {
+  const manager = new StoreManager<T>({
+    target: createStoreData(target),
   });
-
-  const computeState = <TS extends {}, TC extends Computables<TS>>(
-    state: TS,
-    computables: TC
-  ): ComputedState<TS, TC> => {
-    return Object.fromEntries(
-      Object.entries(computables).map(([key, computable]) => [key, computable(state)])
-    ) as ComputedState<TS, TC>;
-  };
-
-  const wrappedActions = Object.fromEntries(
-    Object.entries(manager.actions).map(([key, action]) => {
-      return [
-        key,
-        (...args: any[]) => {
-          const computed = computeState(manager.state, manager.computables);
-          action({ state: manager.state, computed }, ...args);
-        },
-      ];
-    })
-  ) as WrappedActions<A>;
 
   return {
     state: manager.state,
-    actions: wrappedActions,
-    computed: manager.computables,
     subscribe: manager.subscribe.bind(manager),
-  } as Store<T, C, A>;
+  } as Store<T>;
 };
 
 let useStoreHelperCount = 0;
-export const useStore = <T extends {}, C extends Computables<T>, A extends Actions<T, C>>(store: Store<T, C, A>) => {
+export const useStore = <T extends {}>(store: Store<T>) => {
   const updateRef = useRef({});
+  const observedPropertiesRef = useRef<WeakMap<any, Set<string | symbol>>>(new WeakMap());
 
   const singleton = useMemo(() => {
     const symbol = Symbol(`useStore:${++useStoreHelperCount}`);
-    const observedPropertiesMap = new WeakMap<any, Set<string | symbol>>();
 
     const handleGet = (_: ProxyCacheValue, target: any, key: string | symbol) => {
-      if (observedPropertiesMap.has(target)) {
-        observedPropertiesMap.get(target)!.add(key);
+      if (observedPropertiesRef.current.has(target)) {
+        observedPropertiesRef.current.get(target)!.add(key);
       } else {
-        observedPropertiesMap.set(target, new Set([key]));
+        observedPropertiesRef.current.set(target, new Set([key]));
       }
     };
 
     const createHandleManagerUpdate =
       (callback: () => void) => (proxy: ProxyCacheValue, _target: any, key: string | symbol) => {
-        const observedProperties = observedPropertiesMap.get(proxy.instance);
+        const observedProperties = observedPropertiesRef.current.get(proxy.instance);
         if (!observedProperties || !observedProperties.has(key)) return;
         updateRef.current = {};
         callback();
@@ -159,12 +124,14 @@ export const useStore = <T extends {}, C extends Computables<T>, A extends Actio
     }) as unknown as T;
 
     const subscribe = (callback: () => void) => {
+      console.log("subscribe");
       const subscriptions: (() => void)[] = [];
       const handleManagerUpdate = createHandleManagerUpdate(callback);
       subscriptions.push(store.subscribe("set", handleManagerUpdate));
       subscriptions.push(store.subscribe("delete", handleManagerUpdate));
 
       return () => {
+        console.log("unsubscribe");
         for (const unsubscribe of subscriptions) {
           unsubscribe();
         }
@@ -177,9 +144,5 @@ export const useStore = <T extends {}, C extends Computables<T>, A extends Actio
 
   useSyncExternalStore(singleton.subscribe, () => updateRef.current);
 
-  return {
-    state: singleton.accessProxy,
-    actions: store.actions,
-    computed: store.computed,
-  };
+  return singleton.accessProxy;
 };

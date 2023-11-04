@@ -1,20 +1,21 @@
-/* eslint-disable no-param-reassign */
 import { createStore } from "reactlift";
 
-export const testStore = createStore(
-  { nested: { a: 0, b: 0 } },
-  {
-    computed: {
-      doubleA: (state) => state.nested.a * 2,
-      doubleB: (state) => state.nested.b * 2,
+export const testStore = createStore({
+  top: 10,
+  nested: {
+    a: 0,
+    b: 0,
+    get c() {
+      return this.b;
     },
-    actions: {
-      incrementA: ({ state }, step: number) => {
-        state.nested.a += step;
-      },
-      incrementB: ({ state }, step: number) => {
-        state.nested.b += step;
-      },
-    },
-  }
-);
+  },
+  get doubleA() {
+    return this.nested.a * 2;
+  },
+  incrementA(amount = 10) {
+    this.nested.a += amount;
+  },
+  incrementB(amount = 10) {
+    this.nested.b += amount;
+  },
+});

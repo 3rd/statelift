@@ -12,7 +12,7 @@ export type ProxyCacheValue = {
   rootInstance?: ProxyCacheValue;
   callbacks?: ProxyCallbacks;
 };
-const cache = new Map<symbol, WeakMap<{}, ProxyCacheValue>>();
+const proxyCache = new Map<symbol, WeakMap<{}, ProxyCacheValue>>();
 
 type CreateDeepProxyOptions = {
   rootSymbol?: symbol;
@@ -27,11 +27,11 @@ export const createDeepProxy = <T extends {}>(target: T, options: CreateDeepProx
 
   // console.log("@createDeepProxy", { target, options, rootSymbol, isRoot });
 
-  let rootCache = cache.get(rootSymbol);
+  let rootCache = proxyCache.get(rootSymbol);
   if (!rootCache) {
     // console.log("@create root cache", { rootSymbol });
     rootCache = new WeakMap();
-    cache.set(rootSymbol, rootCache);
+    proxyCache.set(rootSymbol, rootCache);
   }
 
   const cachedProxy = rootCache.get(target);
@@ -59,9 +59,9 @@ export const createDeepProxy = <T extends {}>(target: T, options: CreateDeepProx
   };
 
   const handler: ProxyHandler<T> = {
-    get(obj, prop) {
-      // console.log("@proxy get", { target: obj, prop, rootInstance, options });
-      const value = Reflect.get(obj, prop);
+    get(obj, prop, receiver) {
+      // console.log("@proxy get", { proxy, target: obj, prop, rootInstance, options });
+      const value = Reflect.get(obj, prop, receiver);
 
       rootInstance.callbacks!.get?.(proxy, obj, prop, value);
 
@@ -72,14 +72,10 @@ export const createDeepProxy = <T extends {}>(target: T, options: CreateDeepProx
       return value;
     },
 
-    set(obj, prop, value) {
+    set(obj, prop, value, receiver) {
       // console.log("@proxy set", { target: obj, prop, value, rootInstance, options });
 
-      if (value && typeof value === "object") {
-        obj[prop as keyof T] = { ...obj[prop as keyof T], ...value };
-      } else {
-        obj[prop as keyof T] = value;
-      }
+      Reflect.set(obj, prop, value, receiver);
 
       rootInstance.callbacks!.set?.(proxy, obj, prop, value);
       return true;
