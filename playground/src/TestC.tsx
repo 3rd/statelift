@@ -1,21 +1,20 @@
 import React from "react";
 import { useStore } from "reactlift";
-import { testStore } from "./test-store";
+import { store } from "./store";
 import { useRenderCount } from "./devhooks";
 
 export const TestC = () => {
   const renderCount = useRenderCount();
-
-  const store = useStore(testStore);
+  const state = useStore(store);
 
   return (
     <div style={{ border: "2px dashed #242424", padding: "1rem" }}>
       <h2>C</h2>
       <p>renders: {renderCount}</p>
-      <p>store.state.a: {store.nested.a}</p>
-      <p>store.state.b: {store.nested.b}</p>
-      <button onClick={() => store.nested.a++}>Increase A</button>
-      <button onClick={() => store.nested.b++}>Increase B</button>
+      <p>state.state.a: {state.nested.a}</p>
+      <p>state.state.b: {state.nested.b}</p>
+      <button onClick={() => state.nested.a++}>Increase A</button>
+      <button onClick={() => state.nested.b++}>Increase B</button>
     </div>
   );
 };

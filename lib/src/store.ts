@@ -1,95 +1,94 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useSyncExternalStore } from "react";
-import { ProxyCacheValue, createDeepProxy } from "./proxy";
+import { ProxyCacheValue, ProxyCallbacks, createDeepProxy } from "./proxy";
 
-type StoreData<T> = T | ((root: T) => T);
-
-type Store<T extends {}> = {
-  state: StoreData<T>;
-  subscribe: <K extends keyof StoreManager<any>["watchers"]>(event: K, watcher: (...args: any[]) => void) => () => void;
+type StoreWatchers = {
+  [K in keyof ProxyCallbacks]: Set<ProxyCallbacks[K]>;
 };
 
-function createStoreData<T extends {}>(data: StoreData<T>): T {
-  if (typeof data === "function") {
-    const fnData: (root: T) => T = data as (root: T) => T;
-
-    const handler: ProxyHandler<T> = {
-      get(target, prop, receiver) {
-        return Reflect.get(target, prop, receiver);
-      },
-    };
-
-    const lazyRoot = new Proxy({}, handler) as T;
-    const result = fnData(lazyRoot);
-
-    handler.get = (_target, prop, receiver) => {
-      return Reflect.get(result, prop, receiver);
-    };
-    return lazyRoot as T;
-  }
-  return data;
+interface Store<T extends {}> {
+  state: T;
+  subscribe: <K extends keyof StoreWatchers>(event: K, watcher: ProxyCallbacks[K]) => () => void;
 }
 
-interface StoreOptions<T extends {}> {
+type StoreOptions<T extends {}> = {
   target: T;
-}
+};
 
-class StoreManager<TState extends {}> {
-  state: TState;
-  watchers = {
-    get: new Set<(proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => void>(),
-    set: new Set<(proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => void>(),
-    delete: new Set<(proxy: ProxyCacheValue, target: {}, key: string | symbol) => void>(),
+class StoreManager<T extends {}> {
+  state: T extends (...args: any[]) => infer R ? R : T;
+  watchers: StoreWatchers = {
+    get: new Set(),
+    set: new Set(),
+    delete: new Set(),
   };
 
-  constructor({ target }: StoreOptions<TState>) {
-    this.state = createDeepProxy(target, {
-      callbacks: {
-        get: this.handleGet,
-        set: this.handleSet,
-        delete: this.handleDelete,
-      },
-    });
+  constructor({ target: targetOrBuilder }: StoreOptions<T>) {
+    if (typeof targetOrBuilder === "function") {
+      let target = {} as T;
+      const proxy = new Proxy(
+        {},
+        {
+          get(_, key) {
+            return (target as any)[key];
+          },
+        }
+      );
+      target = createDeepProxy(targetOrBuilder(proxy), {
+        callbacks: {
+          get: this.handleGet,
+          set: this.handleSet,
+          delete: this.handleDelete,
+        },
+      });
+      this.state = target as any;
+    } else {
+      this.state = createDeepProxy(targetOrBuilder as any, {
+        callbacks: {
+          get: this.handleGet,
+          set: this.handleSet,
+          delete: this.handleDelete,
+        },
+      });
+    }
   }
 
-  private handleGet = (proxy: ProxyCacheValue, target: any, key: string | symbol, value: any) => {
+  private handleGet = (proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => {
     // console.log("@manager get", target, key);
     for (const watcher of this.watchers.get) {
       watcher(proxy, target, key, value);
     }
   };
 
-  private handleSet = (proxy: ProxyCacheValue, target: any, key: string | symbol, value: any) => {
+  private handleSet = (proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => {
     // console.log("@manager set", target, key, value);
     for (const watcher of this.watchers.set) {
       watcher(proxy, target, key, value);
     }
   };
 
-  private handleDelete = (proxy: ProxyCacheValue, target: any, key: string | symbol) => {
+  private handleDelete = (proxy: ProxyCacheValue, target: {}, key: string | symbol) => {
     // console.log("@manager delete", target, key);
     for (const watcher of this.watchers.delete) {
       watcher(proxy, target, key);
     }
   };
 
-  subscribe<T extends keyof typeof this.watchers>(event: T, watcher: (...args: any[]) => void) {
+  subscribe: Store<T>["subscribe"] = (event, watcher) => {
     this.watchers[event].add(watcher);
     return () => {
       this.watchers[event].delete(watcher);
     };
-  }
+  };
 }
 
-export const createStore = <T extends {}>(target: T): Store<T> => {
-  const manager = new StoreManager<T>({
-    target: createStoreData(target),
-  });
+export const createStore = <T extends {}>(target: T) => {
+  const manager = new StoreManager<T>({ target });
 
   return {
     state: manager.state,
     subscribe: manager.subscribe.bind(manager),
-  } as Store<T>;
+  };
 };
 
 let useStoreHelperCount = 0;
@@ -98,9 +97,8 @@ export const useStore = <T extends {}>(store: Store<T>) => {
   const observedPropertiesRef = useRef<WeakMap<any, Set<string | symbol>>>(new WeakMap());
 
   const singleton = useMemo(() => {
-    const symbol = Symbol(`useStore:${++useStoreHelperCount}`);
-
     const handleGet = (_: ProxyCacheValue, target: any, key: string | symbol) => {
+      // console.log("@useStore get", target, key);
       if (observedPropertiesRef.current.has(target)) {
         observedPropertiesRef.current.get(target)!.add(key);
       } else {
@@ -110,6 +108,7 @@ export const useStore = <T extends {}>(store: Store<T>) => {
 
     const createHandleManagerUpdate =
       (callback: () => void) => (proxy: ProxyCacheValue, _target: any, key: string | symbol) => {
+        // console.log("@useStore handle manager update", key);
         const observedProperties = observedPropertiesRef.current.get(proxy.instance);
         if (!observedProperties || !observedProperties.has(key)) return;
         updateRef.current = {};
@@ -117,7 +116,7 @@ export const useStore = <T extends {}>(store: Store<T>) => {
       };
 
     const accessProxy = createDeepProxy(store.state, {
-      rootSymbol: symbol,
+      rootSymbol: Symbol(`useStore:${++useStoreHelperCount}`),
       callbacks: {
         get: handleGet,
       },
