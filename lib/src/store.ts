@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useSyncExternalStore } from "react";
 import { ProxyCacheValue, ProxyCallbacks, createDeepProxy } from "./proxy";
+import { isFunction } from "./utils";
 
 type StoreWatchers = {
   [K in keyof ProxyCallbacks]: Set<ProxyCallbacks[K]>;
@@ -12,7 +13,7 @@ interface Store<T extends {}> {
 }
 
 type StoreOptions<T extends {}> = {
-  target: T;
+  targetOrBuilder: T | ((root: T) => T);
 };
 
 class StoreManager<T extends {}> {
@@ -23,18 +24,16 @@ class StoreManager<T extends {}> {
     delete: new Set(),
   };
 
-  constructor({ target: targetOrBuilder }: StoreOptions<T>) {
-    if (typeof targetOrBuilder === "function") {
-      let target = {} as T;
-      const proxy = new Proxy(
-        {},
-        {
-          get(_, key) {
-            return (target as any)[key];
-          },
-        }
-      );
-      target = createDeepProxy(targetOrBuilder(proxy), {
+  constructor({ targetOrBuilder }: StoreOptions<T>) {
+    if (isFunction(targetOrBuilder)) {
+      let target = {};
+      const proxy = new Proxy({} as T, {
+        get(_, key) {
+          return (target as any)[key];
+        },
+      });
+      const builtState = (targetOrBuilder as (root: T) => T)(proxy);
+      target = createDeepProxy(builtState, {
         callbacks: {
           get: this.handleGet,
           set: this.handleSet,
@@ -43,13 +42,13 @@ class StoreManager<T extends {}> {
       });
       this.state = target as any;
     } else {
-      this.state = createDeepProxy(targetOrBuilder as any, {
+      this.state = createDeepProxy(targetOrBuilder, {
         callbacks: {
           get: this.handleGet,
           set: this.handleSet,
           delete: this.handleDelete,
         },
-      });
+      }) as any;
     }
   }
 
@@ -83,7 +82,7 @@ class StoreManager<T extends {}> {
 }
 
 export const createStore = <T extends {}>(target: T) => {
-  const manager = new StoreManager<T>({ target });
+  const manager = new StoreManager({ targetOrBuilder: target });
 
   return {
     state: manager.state,
@@ -120,7 +119,7 @@ export const useStore = <T extends {}>(store: Store<T>) => {
       callbacks: {
         get: handleGet,
       },
-    }) as unknown as T;
+    });
 
     const subscribe = (callback: () => void) => {
       console.log("subscribe");
