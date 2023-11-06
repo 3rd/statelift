@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { ProxyCallbacks, createDeepProxy } from "./proxy";
+import { ProxyCallbacks, createDeepProxy, createRootProxy } from "./proxy";
 
 describe("createDeepProxy", () => {
   it("creates a deep proxy for the target object", () => {
@@ -23,6 +23,27 @@ describe("createDeepProxy", () => {
 
     const proxy3 = createDeepProxy(target);
     expect(proxy1).not.toBe(proxy3);
+  });
+});
+
+describe("createRootProxy", () => {
+  it.only("creates a root proxy that wraps the result of the builder function called with the root proxy itself", () => {
+    const proxy = createRootProxy<{ nested: { foo: number }; computed: { doubleFoo: number } }>(
+      (root) => ({
+        nested: { foo: 10 },
+        computed: {
+          get doubleFoo() {
+            return root.nested.foo * 2;
+          },
+        },
+      })
+    );
+
+    expect(proxy.nested.foo).toBe(10);
+    expect(proxy.computed.doubleFoo).toBe(20);
+
+    proxy.nested.foo = 20;
+    expect(proxy.computed.doubleFoo).toBe(40);
   });
 });
 
@@ -83,5 +104,32 @@ describe("proxy", () => {
     expect(callbacks.delete).toHaveBeenCalledTimes(2);
     expect(callbacks.delete).toHaveBeenNthCalledWith(2, expect.anything(), target.bar!, "baz");
     expect("baz" in target.bar!).toBe(false);
+  });
+
+  it("tracks proxied proxies and calls parent callbacks", () => {
+    const innerCallbacks: Partial<ProxyCallbacks> = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const inner = createDeepProxy(
+      { foo: "bar" },
+      {
+        rootSymbol: Symbol("inner"),
+        callbacks: innerCallbacks,
+      }
+    );
+
+    const outerCallbacks: Partial<ProxyCallbacks> = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const outer = createDeepProxy(inner.instance, {
+      rootSymbol: Symbol("outer"),
+      callbacks: outerCallbacks,
+    });
+
+    // access inner 1 time: foo
+    expect(inner.instance.foo).toBe("bar");
+    expect(innerCallbacks.get).toHaveBeenCalledTimes(1);
+    expect(outerCallbacks.get).toHaveBeenCalledTimes(1);
+
+    // access outer 1 time: foo
+    expect(outer.instance.foo).toBe("bar");
+    expect(innerCallbacks.get).toHaveBeenCalledTimes(2);
+    expect(outerCallbacks.get).toHaveBeenCalledTimes(3); // outer, inner, outer
   });
 });

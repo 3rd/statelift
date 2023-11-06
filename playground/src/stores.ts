@@ -1,12 +1,12 @@
 /* eslint-disable no-param-reassign */
 import { createStore } from "reactlift";
 
-const createSimpleStore = () =>
+export const createSimpleStore = () =>
   createStore({
     top: 10,
     nested: {
-      a: 0,
-      b: 0,
+      a: 1,
+      b: 1,
       get c() {
         return this.b;
       },
@@ -22,13 +22,13 @@ const createSimpleStore = () =>
     },
   });
 
-const createSelfReferencingStoreWithRootArg = () =>
+export const createSelfReferencingStoreWithRootArg = () =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createStore((root: any) => ({
     top: 10,
     nested: {
-      a: 0,
-      b: 0,
+      a: 1,
+      b: 1,
       get c() {
         return this.b;
       },
@@ -45,7 +45,7 @@ const createSelfReferencingStoreWithRootArg = () =>
     },
   }));
 
-const createSelfReferencingStoreWithStoreInstance = () => {
+export const createSelfReferencingStoreWithStoreInstance = () => {
   type Store = {
     top: number;
     nested: {
@@ -60,8 +60,8 @@ const createSelfReferencingStoreWithStoreInstance = () => {
   const store = createStore({
     top: 10,
     nested: {
-      a: 0,
-      b: 0,
+      a: 1,
+      b: 1,
       get c() {
         return store.state.nested.b;
       },
@@ -77,18 +77,4 @@ const createSelfReferencingStoreWithStoreInstance = () => {
     },
   } as Store);
   return store;
-};
-
-export const simpleStore = createSimpleStore();
-export const selfReferencingStoreWithRootArg = createSelfReferencingStoreWithRootArg();
-export const selfReferencingStoreWithStoreInstance = createSelfReferencingStoreWithStoreInstance();
-
-export type Store =
-  typeof selfReferencingStoreWithRootArg | typeof selfReferencingStoreWithStoreInstance | typeof simpleStore;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(window as any).stores = {
-  simpleStore,
-  selfReferencingStoreWithRootArg,
-  selfReferencingStoreWithStoreInstance,
 };

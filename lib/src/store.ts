@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useSyncExternalStore } from "react";
-import { ProxyCacheValue, ProxyCallbacks, createDeepProxy } from "./proxy";
+import {
+  ProxyCacheValue,
+  ProxyCallbacks,
+  createDeepProxy,
+  createRootProxy,
+  unwrapProxy,
+} from "./proxy";
 import { isFunction } from "./utils";
 
 type StoreWatchers = {
@@ -17,7 +23,7 @@ type StoreOptions<T extends {}> = {
 };
 
 class StoreManager<T extends {}> {
-  state: T;
+  proxy: ProxyCacheValue<T>;
   watchers: StoreWatchers = {
     get: new Set(),
     set: new Set(),
@@ -26,43 +32,37 @@ class StoreManager<T extends {}> {
 
   constructor({ targetOrBuilder }: StoreOptions<T>) {
     if (isFunction(targetOrBuilder)) {
-      let target = {} as T;
-      const proxy = new Proxy({} as T, {
-        get(_, key) {
-          return Reflect.get(target, key, target);
-        },
-        set(_, key, value) {
-          Reflect.set(target, key, value, target);
-          return true;
-        },
-        deleteProperty(_, key) {
-          // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-          delete target[key as keyof T];
-          return true;
+      const root = createRootProxy(targetOrBuilder as (root: T) => T, {
+        callbacks: {
+          set: this.handleRootSet,
         },
       });
-      const builtState = (targetOrBuilder as (root: T) => T)(proxy);
-      target = createDeepProxy(builtState, {
+
+      this.proxy = createDeepProxy(root, {
+        rootSymbol: Symbol("computed-store"),
         callbacks: {
           get: this.handleGet,
           set: this.handleSet,
           delete: this.handleDelete,
         },
-      }).instance;
-      this.state = target as any;
+      });
     } else {
-      this.state = createDeepProxy(targetOrBuilder, {
+      this.proxy = createDeepProxy(targetOrBuilder, {
         callbacks: {
           get: this.handleGet,
           set: this.handleSet,
           delete: this.handleDelete,
         },
-      }).instance as any;
+      }) as ProxyCacheValue<T>;
     }
   }
 
+  get state() {
+    return this.proxy.instance;
+  }
+
   private handleGet = (proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => {
-    console.log("@manager get", target, key);
+    // console.log("@manager get", target, key);
     for (const watcher of this.watchers.get) {
       watcher(proxy, target, key, value);
     }
@@ -72,6 +72,13 @@ class StoreManager<T extends {}> {
     // console.log("@manager set", target, key, value);
     for (const watcher of this.watchers.set) {
       watcher(proxy, target, key, value);
+    }
+  };
+
+  private handleRootSet = (target: {}, prop: string | symbol, value: any) => {
+    // console.log("@manager root set", target, key, value);
+    for (const watcher of this.watchers.set) {
+      watcher(this.proxy, target, prop, value);
     }
   };
 
@@ -100,31 +107,44 @@ export const createStore = <T extends {}>(target: T) => {
 };
 
 let useStoreHelperCount = 0;
-export const useStore = <T extends {}>(store: Store<T>) => {
+
+type UseStoreOptions = {
+  label?: string;
+};
+
+export const useStore = <T extends {}>(store: Store<T>, opts?: UseStoreOptions) => {
   const updateRef = useRef({});
-  const observedPropertiesRef = useRef<WeakMap<any, Set<string | symbol>>>(new WeakMap());
+  const observedPropertiesRef = useRef<Map<any, Set<string | symbol>>>(new Map());
+
+  // if (opts?.label) console.log(`---------- @useStore ${opts.label} -----------`);
 
   const singleton = useMemo(() => {
-    const handleGet = (proxy: ProxyCacheValue, target: any, key: string | symbol) => {
-      console.log("@useStore get", { proxy, target, key });
-      if (observedPropertiesRef.current.has(target)) {
-        observedPropertiesRef.current.get(target)!.add(key);
+    const handleGet = (_: ProxyCacheValue, target: any, key: string | symbol) => {
+      const unwrappedTarget = unwrapProxy(target);
+      // console.log("@useStore get", { proxy, target, key, unwrappedTarget });
+
+      if (observedPropertiesRef.current.has(unwrappedTarget)) {
+        observedPropertiesRef.current.get(unwrappedTarget)!.add(key);
       } else {
-        observedPropertiesRef.current.set(target, new Set([key]));
+        observedPropertiesRef.current.set(unwrappedTarget, new Set([key]));
       }
     };
 
     const createHandleManagerUpdate =
-      (callback: () => void) => (proxy: ProxyCacheValue, _target: any, key: string | symbol) => {
-        console.log("@useStore handle manager update", { proxy, _target, key });
-        const observedProperties = observedPropertiesRef.current.get(proxy.instance);
+      (callback: () => void) => (_: ProxyCacheValue, target: any, key: string | symbol) => {
+        const unwrappedTarget = unwrapProxy(target);
+
+        // console.log("@useStore handle manager update", { target, key, unwrappedTarget });
+        // console.log("DEPS:", observedPropertiesRef.current.entries());
+        const observedProperties = observedPropertiesRef.current.get(unwrappedTarget);
         if (!observedProperties || !observedProperties.has(key)) return;
         updateRef.current = {};
         callback();
       };
 
     const accessProxy = createDeepProxy(store.state, {
-      rootSymbol: Symbol(`useStore:${++useStoreHelperCount}`),
+      // eslint-disable-next-line sonarjs/no-nested-template-literals
+      rootSymbol: Symbol(`useStore:${opts?.label ? `${opts.label}:` : ""}${++useStoreHelperCount}`),
       callbacks: {
         get: handleGet,
       },

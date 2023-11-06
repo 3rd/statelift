@@ -1,30 +1,31 @@
 import React, { useState } from "react";
 import { useRenderCount } from "../../hooks/useRenderCount";
-import * as stores from "../../stores";
 import { StoreTestA } from "./StoreTestA";
 import { StoreTestB } from "./StoreTestB";
 import { StoreTestC } from "./StoreTestC";
 import { StoreTestD } from "./StoreTestD";
+import {
+  createSelfReferencingStoreWithRootArg,
+  createSelfReferencingStoreWithStoreInstance,
+  createSimpleStore,
+} from "../../stores";
 
-type Mutable<T> = T & {
-  -readonly [P in keyof T]: T[P];
+const stores = {
+  simpleStore: createSimpleStore(),
+  selfReferencingStoreWithRootArg: createSelfReferencingStoreWithRootArg(),
+  selfReferencingStoreWithStoreInstance: createSelfReferencingStoreWithStoreInstance(),
 };
 
-type Stores = Mutable<typeof stores>;
+export type Store = (typeof stores)[keyof typeof stores];
 
-const mappedStores = Object.keys(stores).reduce(
-  (acc, key) => {
-    acc[key as keyof typeof stores] = stores[key as keyof typeof stores];
-    return acc;
-  },
-  {} as { [K in keyof Stores]: Stores[K] }
-);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(window as any).stores = stores;
 
 export const StoreTest = () => {
   const renderCount = useRenderCount();
-  const [storeKey, setStoreKey] = useState<keyof Stores>("selfReferencingStoreWithStoreInstance");
+  const [storeKey, setStoreKey] = useState<keyof typeof stores>("selfReferencingStoreWithRootArg");
 
-  const store: stores.Store = mappedStores[storeKey];
+  const store = stores[storeKey];
 
   return (
     <>
@@ -34,9 +35,9 @@ export const StoreTest = () => {
       <select
         id="store"
         value={storeKey}
-        onChange={(e) => setStoreKey(e.target.value as keyof Stores)}
+        onChange={(e) => setStoreKey(e.target.value as keyof typeof stores)}
       >
-        {Object.keys(mappedStores).map((key) => (
+        {Object.keys(stores).map((key) => (
           <option key={key} value={key}>
             {key}
           </option>
@@ -44,9 +45,9 @@ export const StoreTest = () => {
       </select>
 
       <div style={{ display: "flex", gap: "1rem" }}>
-        {/* <StoreTestA store={store} /> */}
-        {/* <StoreTestB store={store} /> */}
-        {/* <StoreTestC store={store} /> */}
+        <StoreTestA store={store} />
+        <StoreTestB store={store} />
+        <StoreTestC store={store} />
         <StoreTestD store={store} />
       </div>
     </>

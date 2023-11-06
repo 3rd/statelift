@@ -1,7 +1,7 @@
 import React from "react";
 import { useStore } from "../../../../lib/src/store";
 import { useRenderCount } from "../../hooks/useRenderCount";
-import type { Store } from "../../stores";
+import { Store } from "./StoreTest";
 
 export interface StoreTestCProps {
   store: Store;

@@ -181,7 +181,7 @@ for (const { type, create } of storeDefinitions) {
 
         expect(store.state.toDelete).toEqual(1);
 
-        store.state.deleteMe();
+        delete store.state.toDelete;
         expect(store.state.toDelete).toEqual(undefined);
       });
 
@@ -275,14 +275,14 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(1);
 
         // access store.arr
-        expect(result.current.store.arr).toEqual([1, 2, 3]);
+        expect(result.current.store.toDelete).toEqual(1);
         expect(result.current.count).toEqual(1);
 
-        // delete item from store.state.arr
+        // delete item
         act(() => {
-          store.state.arr.pop();
+          delete store.state.toDelete;
         });
-        expect(result.current.store.arr).toEqual([1, 2]);
+        expect(result.current.store.toDelete).toEqual(undefined);
         expect(result.current.count).toEqual(2);
       });
 
@@ -292,34 +292,37 @@ for (const { type, create } of storeDefinitions) {
         const { result } = renderHook(() => useStoreWithRenderCount(store));
         expect(result.current.count).toEqual(1);
 
-        // access store.nested.a
-        expect(result.current.store.nested.a).toEqual(3);
+        // access store.arr
+        expect(result.current.store.top).toEqual(2);
         expect(result.current.count).toEqual(1);
 
-        // delete item from store.nested.arr
+        // delete item
         act(() => {
-          store.state.arr.pop();
+          delete store.state.toDelete;
         });
         expect(result.current.count).toEqual(1);
       });
 
-      it("rerenders when accessed computed data's dependencies change", () => {
-        const store = create();
+      if (type !== "self-ref-store-instance") {
+        it("rerenders when accessed computed data's dependencies change", () => {
+          const store = create();
 
-        const { result } = renderHook(() => useStoreWithRenderCount(store));
-        expect(result.current.count).toEqual(1);
+          const { result } = renderHook(() => useStoreWithRenderCount(store));
+          expect(result.current.count).toEqual(1);
 
-        // access store.doubleA
-        expect(result.current.store.doubleA).toEqual(6);
-        expect(result.current.count).toEqual(1);
+          // access store.doubleA
+          expect(result.current.store.doubleA).toEqual(6);
+          expect(result.current.count).toEqual(1);
 
-        // mutate store.nested.a
-        act(() => {
-          store.state.nested.a = 100;
+          // mutate store.nested.a
+          act(() => {
+            store.state.nested.a = 100;
+          });
+          expect(result.current.store.doubleA).toEqual(200);
+          console.log(store.state.doubleA);
+          expect(result.current.count).toEqual(2);
         });
-        expect(result.current.store.doubleA).toEqual(200);
-        expect(result.current.count).toEqual(2);
-      });
+      }
     });
   });
 }

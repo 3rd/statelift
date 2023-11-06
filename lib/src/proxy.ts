@@ -1,5 +1,6 @@
 /* eslint-disable no-param-reassign */
 const PROXY_ID_SYMBOL = Symbol("type");
+const PROXY_UNWRAP_SYMBOL = Symbol("proxy-unwrap");
 
 export type ProxyCallbacks = {
   get: (proxy: ProxyCacheValue, target: {}, key: string | symbol, value: unknown) => void;
@@ -8,9 +9,10 @@ export type ProxyCallbacks = {
 };
 
 export type ProxyCacheValue<T extends {} = {}> = {
+  target: T;
   instance: T;
   callbacks?: Partial<ProxyCallbacks>;
-  rootInstance?: ProxyCacheValue;
+  rootProxy?: ProxyCacheValue;
   [PROXY_ID_SYMBOL]: symbol;
 };
 const rootCache = new Map<symbol, WeakMap<{}, ProxyCacheValue>>();
@@ -24,8 +26,11 @@ type CreateDeepProxyOptions = {
 
 let count = 0;
 export const createDeepProxy = <T extends {}>(target: T, options: CreateDeepProxyOptions = {}) => {
-  const { rootSymbol = Symbol(`state-proxy:${count++}`), callbacks = {}, rootProxy } = options;
+  const rootSymbol = options.rootSymbol ?? Symbol(`state-proxy:${count++}`);
+  const callbacks = options.callbacks;
   const isRoot = options.isRoot !== false;
+
+  // console.warn("createDeepProxy", { rootSymbol, isRoot, options, target });
 
   let proxyCache = rootCache.get(rootSymbol);
   if (!proxyCache) {
@@ -41,44 +46,47 @@ export const createDeepProxy = <T extends {}>(target: T, options: CreateDeepProx
   }
 
   const proxy: ProxyCacheValue<T> = {
+    target,
     instance: null as unknown as T,
-    rootInstance: isRoot ? undefined : rootProxy,
+    rootProxy: options.rootProxy,
     callbacks,
     [PROXY_ID_SYMBOL]: rootSymbol,
   };
 
-  const rootInstance = isRoot ? proxy : rootProxy!;
+  const rootProxy = isRoot ? proxy : options.rootProxy!;
 
   const nextOptions = {
     rootSymbol,
-    rootProxy: rootInstance,
+    rootProxy,
     isRoot: false,
   };
 
   const handler: ProxyHandler<T> = {
     get(obj, prop, receiver) {
-      console.log("@proxy get", rootSymbol, prop, { rootInstance });
-      const value = Reflect.get(obj, prop, receiver);
+      if (prop === PROXY_UNWRAP_SYMBOL) return obj;
 
-      rootInstance.callbacks!.get?.(proxy, obj, prop, value);
+      const value = Reflect.get(obj, prop, receiver);
+      // console.log("@proxy get", rootSymbol, prop, { proxy, obj, prop, value });
 
       if (value && typeof value === "object") {
-        return createDeepProxy(value, nextOptions).instance;
+        const proxiedValue = createDeepProxy(value, nextOptions).instance;
+        rootProxy.callbacks?.get?.(proxy, obj, prop, proxiedValue);
+        return proxiedValue;
       }
+      rootProxy.callbacks?.get?.(proxy, obj, prop, value);
       return value;
     },
     set(obj, prop, value, receiver) {
       // console.log("@proxy set", { proxy, target: obj, prop, value });
-      Reflect.set(obj, prop, value, receiver);
-      rootInstance.callbacks!.set?.(proxy, obj, prop, value);
-      return true;
+      const result = Reflect.set(obj, prop, value, receiver);
+      rootProxy.callbacks?.set?.(proxy, obj, prop, value);
+      return result;
     },
     deleteProperty(obj, prop) {
       // console.log("@proxy deleteProperty", { proxy, target: obj, prop });
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-      delete obj[prop as keyof T];
-      rootInstance.callbacks!.delete?.(proxy, obj, prop);
-      return true;
+      const result = Reflect.deleteProperty(obj, prop);
+      rootProxy.callbacks?.delete?.(proxy, obj, prop);
+      return result;
     },
   };
 
@@ -86,4 +94,72 @@ export const createDeepProxy = <T extends {}>(target: T, options: CreateDeepProx
   proxyCache.set(target, proxy);
 
   return proxy;
+};
+
+export const createRootProxy = <T extends object>(
+  builder: (root: T) => T,
+  options?: {
+    callbacks: {
+      get?: (target: T, prop: string | symbol, receiver: {}) => void;
+      set?: (target: T, prop: string | symbol, value: unknown, receiver: {}) => void;
+      deleteProperty?: (target: T, prop: string | symbol) => void;
+    };
+  }
+): T => {
+  let isBuilding = false;
+  const skeleton = {} as T;
+  const handler: ProxyHandler<T> = {
+    get(target, prop, receiver) {
+      if (prop === PROXY_UNWRAP_SYMBOL) return target;
+      if (isBuilding) return Reflect.get(target, prop, receiver);
+
+      if (!isBuilding) {
+        options?.callbacks.get?.(target, prop, receiver);
+      }
+
+      const value = Reflect.get(target, prop, receiver);
+
+      if (value && typeof value === "object") {
+        return new Proxy(value, handler as ProxyHandler<{}>);
+      }
+      return value;
+    },
+    set(target, prop, value, receiver) {
+      const result = Reflect.set(target, prop, value);
+
+      if (!isBuilding) {
+        options?.callbacks.set?.(target, prop, value, receiver);
+      }
+
+      return result;
+    },
+    deleteProperty(target, prop) {
+      const result = Reflect.deleteProperty(target, prop);
+
+      if (!isBuilding) {
+        options?.callbacks.deleteProperty?.(target, prop);
+      }
+
+      return result;
+    },
+  };
+
+  isBuilding = true;
+  const root = builder(new Proxy(skeleton as T, handler));
+  Object.assign(skeleton, root);
+  isBuilding = false;
+
+  return new Proxy(root, handler);
+};
+
+export const unwrapProxy = (proxy: {}) => {
+  let root = proxy;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const unwrapped = (root as any)[PROXY_UNWRAP_SYMBOL];
+    if (!unwrapped) break;
+    root = unwrapped;
+  }
+  return root;
 };

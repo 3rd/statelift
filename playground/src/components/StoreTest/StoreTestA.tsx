@@ -1,14 +1,14 @@
 import React from "react";
 import { useStore } from "../../../../lib/src/store";
 import { useRenderCount } from "../../hooks/useRenderCount";
-import type { Store } from "../../stores";
+import { Store } from "./StoreTest";
 
 export interface StoreTestAProps {
   store: Store;
 }
 
 export const StoreTestA = ({ store }: StoreTestAProps) => {
-  const state = useStore(store);
+  const state = useStore(store, { label: "A" });
   const renderCount = useRenderCount();
 
   const handleDirectClick = () => {

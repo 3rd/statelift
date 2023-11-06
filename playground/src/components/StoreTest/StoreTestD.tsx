@@ -1,14 +1,14 @@
 import React from "react";
 import { useStore } from "../../../../lib/src/store";
 import { useRenderCount } from "../../hooks/useRenderCount";
-import type { Store } from "../../stores";
+import { Store } from "./StoreTest";
 
 export interface StoreTestDProps {
   store: Store;
 }
 
 export const StoreTestD = ({ store }: StoreTestDProps) => {
-  const state = useStore(store);
+  const state = useStore(store, { label: "D" });
   const renderCount = useRenderCount();
 
   return (
