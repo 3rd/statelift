@@ -7,13 +7,13 @@ export type ProxyCallbacks = {
   delete: (proxy: ProxyCacheValue, target: {}, key: string | symbol) => void;
 };
 
-export type ProxyCacheValue = {
-  instance: {};
+export type ProxyCacheValue<T extends {} = {}> = {
+  instance: T;
   callbacks?: Partial<ProxyCallbacks>;
   rootInstance?: ProxyCacheValue;
   [PROXY_ID_SYMBOL]: symbol;
 };
-const proxyCache = new Map<symbol, WeakMap<{}, ProxyCacheValue>>();
+const rootCache = new Map<symbol, WeakMap<{}, ProxyCacheValue>>();
 
 type CreateDeepProxyOptions = {
   callbacks?: Partial<ProxyCallbacks>;
@@ -23,28 +23,25 @@ type CreateDeepProxyOptions = {
 };
 
 let count = 0;
-export const createDeepProxy = <T extends {}>(
-  target: T,
-  options: CreateDeepProxyOptions = {}
-): T => {
+export const createDeepProxy = <T extends {}>(target: T, options: CreateDeepProxyOptions = {}) => {
   const { rootSymbol = Symbol(`state-proxy:${count++}`), callbacks = {}, rootProxy } = options;
   const isRoot = options.isRoot !== false;
 
-  let rootCache = proxyCache.get(rootSymbol);
-  if (!rootCache) {
-    rootCache = new WeakMap();
-    proxyCache.set(rootSymbol, rootCache);
+  let proxyCache = rootCache.get(rootSymbol);
+  if (!proxyCache) {
+    proxyCache = new WeakMap();
+    rootCache.set(rootSymbol, proxyCache);
   }
 
-  const cachedProxy = rootCache.get(target);
+  const cachedProxy = proxyCache.get(target);
 
   if (cachedProxy) {
     if (isRoot && callbacks) cachedProxy.callbacks = callbacks;
-    return cachedProxy.instance as T;
+    return cachedProxy as ProxyCacheValue<T>;
   }
 
-  const proxy: ProxyCacheValue = {
-    instance: null as unknown as {},
+  const proxy: ProxyCacheValue<T> = {
+    instance: null as unknown as T,
     rootInstance: isRoot ? undefined : rootProxy,
     callbacks,
     [PROXY_ID_SYMBOL]: rootSymbol,
@@ -60,11 +57,13 @@ export const createDeepProxy = <T extends {}>(
 
   const handler: ProxyHandler<T> = {
     get(obj, prop, receiver) {
-      // console.log("@proxy get", rootSymbol, { proxy, target: obj, prop });
+      console.log("@proxy get", rootSymbol, prop, { rootInstance });
       const value = Reflect.get(obj, prop, receiver);
+
       rootInstance.callbacks!.get?.(proxy, obj, prop, value);
+
       if (value && typeof value === "object") {
-        return createDeepProxy(value, nextOptions);
+        return createDeepProxy(value, nextOptions).instance;
       }
       return value;
     },
@@ -84,7 +83,7 @@ export const createDeepProxy = <T extends {}>(
   };
 
   proxy.instance = new Proxy(target, handler);
-  rootCache.set(target, proxy);
+  proxyCache.set(target, proxy);
 
-  return proxy.instance as T;
+  return proxy;
 };

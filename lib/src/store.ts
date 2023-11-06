@@ -17,7 +17,7 @@ type StoreOptions<T extends {}> = {
 };
 
 class StoreManager<T extends {}> {
-  state: T extends (...args: any[]) => infer R ? R : T;
+  state: T;
   watchers: StoreWatchers = {
     get: new Set(),
     set: new Set(),
@@ -26,10 +26,19 @@ class StoreManager<T extends {}> {
 
   constructor({ targetOrBuilder }: StoreOptions<T>) {
     if (isFunction(targetOrBuilder)) {
-      let target = {};
+      let target = {} as T;
       const proxy = new Proxy({} as T, {
         get(_, key) {
-          return (target as any)[key];
+          return Reflect.get(target, key, target);
+        },
+        set(_, key, value) {
+          Reflect.set(target, key, value, target);
+          return true;
+        },
+        deleteProperty(_, key) {
+          // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+          delete target[key as keyof T];
+          return true;
         },
       });
       const builtState = (targetOrBuilder as (root: T) => T)(proxy);
@@ -39,7 +48,7 @@ class StoreManager<T extends {}> {
           set: this.handleSet,
           delete: this.handleDelete,
         },
-      });
+      }).instance;
       this.state = target as any;
     } else {
       this.state = createDeepProxy(targetOrBuilder, {
@@ -48,12 +57,12 @@ class StoreManager<T extends {}> {
           set: this.handleSet,
           delete: this.handleDelete,
         },
-      }) as any;
+      }).instance as any;
     }
   }
 
   private handleGet = (proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => {
-    // console.log("@manager get", target, key);
+    console.log("@manager get", target, key);
     for (const watcher of this.watchers.get) {
       watcher(proxy, target, key, value);
     }
@@ -85,7 +94,7 @@ export const createStore = <T extends {}>(target: T) => {
   const manager = new StoreManager({ targetOrBuilder: target });
 
   return {
-    state: manager.state,
+    state: manager.state as T extends (...args: any[]) => any ? ReturnType<T> : T,
     subscribe: manager.subscribe.bind(manager),
   };
 };
@@ -96,8 +105,8 @@ export const useStore = <T extends {}>(store: Store<T>) => {
   const observedPropertiesRef = useRef<WeakMap<any, Set<string | symbol>>>(new WeakMap());
 
   const singleton = useMemo(() => {
-    const handleGet = (_: ProxyCacheValue, target: any, key: string | symbol) => {
-      // console.log("@useStore get", target, key);
+    const handleGet = (proxy: ProxyCacheValue, target: any, key: string | symbol) => {
+      console.log("@useStore get", { proxy, target, key });
       if (observedPropertiesRef.current.has(target)) {
         observedPropertiesRef.current.get(target)!.add(key);
       } else {
@@ -107,7 +116,7 @@ export const useStore = <T extends {}>(store: Store<T>) => {
 
     const createHandleManagerUpdate =
       (callback: () => void) => (proxy: ProxyCacheValue, _target: any, key: string | symbol) => {
-        // console.log("@useStore handle manager update", key);
+        console.log("@useStore handle manager update", { proxy, _target, key });
         const observedProperties = observedPropertiesRef.current.get(proxy.instance);
         if (!observedProperties || !observedProperties.has(key)) return;
         updateRef.current = {};
@@ -122,14 +131,12 @@ export const useStore = <T extends {}>(store: Store<T>) => {
     });
 
     const subscribe = (callback: () => void) => {
-      console.log("subscribe");
       const subscriptions: (() => void)[] = [];
       const handleManagerUpdate = createHandleManagerUpdate(callback);
       subscriptions.push(store.subscribe("set", handleManagerUpdate));
       subscriptions.push(store.subscribe("delete", handleManagerUpdate));
 
       return () => {
-        console.log("unsubscribe");
         for (const unsubscribe of subscriptions) {
           unsubscribe();
         }
@@ -138,9 +145,9 @@ export const useStore = <T extends {}>(store: Store<T>) => {
 
     return { subscribe, accessProxy };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [store]);
 
   useSyncExternalStore(singleton.subscribe, () => updateRef.current);
 
-  return singleton.accessProxy;
+  return singleton.accessProxy.instance;
 };

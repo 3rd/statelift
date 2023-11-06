@@ -1,11 +1,15 @@
 import React from "react";
-import { useStore } from "reactlift";
-import { store } from "./store";
-import { useRenderCount } from "./devhooks";
+import { useStore } from "../../../../lib/src/store";
+import { useRenderCount } from "../../hooks/useRenderCount";
+import type { Store } from "../../stores";
 
-export const TestB = () => {
-  const renderCount = useRenderCount();
+export interface StoreTestBProps {
+  store: Store;
+}
+
+export const StoreTestB = ({ store }: StoreTestBProps) => {
   const state = useStore(store);
+  const renderCount = useRenderCount();
 
   const handleDirectClick = () => {
     state.nested.b++;
@@ -19,7 +23,7 @@ export const TestB = () => {
     <div style={{ border: "2px dashed #242424", padding: "1rem" }}>
       <h2>B</h2>
       <p>renders: {renderCount}</p>
-      <p>state.state.b: {state.nested.b}</p>
+      <p>state.nested.b: {state.nested.b}</p>
       <button onClick={handleDirectClick}>Direct</button>
       <button onClick={handleActionClick}>Action</button>
     </div>

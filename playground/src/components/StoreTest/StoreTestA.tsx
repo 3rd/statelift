@@ -1,11 +1,15 @@
 import React from "react";
-import { useStore } from "reactlift";
-import { store } from "./store";
-import { useRenderCount } from "./devhooks";
+import { useStore } from "../../../../lib/src/store";
+import { useRenderCount } from "../../hooks/useRenderCount";
+import type { Store } from "../../stores";
 
-export const TestA = () => {
-  const renderCount = useRenderCount();
+export interface StoreTestAProps {
+  store: Store;
+}
+
+export const StoreTestA = ({ store }: StoreTestAProps) => {
   const state = useStore(store);
+  const renderCount = useRenderCount();
 
   const handleDirectClick = () => {
     state.nested.a++;
