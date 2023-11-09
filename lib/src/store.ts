@@ -12,9 +12,9 @@ type Consumer<T extends {}> = {
   destroy: () => void;
 };
 
-type ConsumerID = Symbol;
+type ConsumerID = symbol;
 type ConsumerTarget = {};
-type ConsumerTargetProp = Symbol | string;
+type ConsumerTargetProp = string | symbol;
 type DependenciesMap = WeakMap<ConsumerTarget, Map<ConsumerTargetProp, Set<ConsumerID>>>;
 type ConsumerCallbacksMap = WeakMap<ConsumerID, () => void>;
 type ConsumerDependenciesMap = WeakMap<ConsumerID, Set<Set<ConsumerID>>>;

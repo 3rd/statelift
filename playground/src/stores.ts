@@ -36,7 +36,7 @@ export const createSimpleStore = () =>
 
 export const createSelfReferencingStoreWithRootArg = () =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createStore((root: any) => ({
+  createStore((root: Store) => ({
     top: 10,
     nested: {
       a: 1,
