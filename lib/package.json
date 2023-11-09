@@ -1,6 +1,6 @@
 {
   "name": "reactlift",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Simple state management for React",
   "type": "module",
   "module": "dist/index.js",
@@ -17,7 +17,6 @@
     ]
   },
   "scripts": {
-    "postinstall": "npm run build",
     "dev": "npm run test",
     "build": "tsup --env.NODE_ENV production --clean --minify --dts",
     "test": "vitest",
