@@ -1,6 +1,6 @@
 /* eslint-disable no-param-reassign */
 import { vi } from "vitest";
-import { createStore, useStore } from "./store";
+import { createConsumer, createStore, useStore } from "./store";
 import { renderHook, act } from "@testing-library/react";
 import { useRef } from "react";
 
@@ -114,36 +114,83 @@ const useStoreWithRenderCount = (store: ReturnType<typeof createSimpleStore>) =>
 
 describe("createStore", () => {
   it("creates a store with the given initial state", () => {
-    const initialState = { count: 0 };
+    const initialState = { foo: { bar: "baz" } };
     const store = createStore(initialState);
 
     expect(store.state).toEqual(initialState);
   });
 
-  it("calls registered callbacks", () => {
-    const initialState: { count?: number } = { count: 0 };
-    const store = createStore(initialState);
+  it("register a new consumer and returns a cleanup function", () => {
+    const store = createStore({});
 
-    const callbacks = {
-      get: vi.fn(),
-      set: vi.fn(),
-      delete: vi.fn(),
-    };
-    store.subscribe("get", callbacks.get);
-    store.subscribe("set", callbacks.set);
-    store.subscribe("delete", callbacks.delete);
+    const consumerId = Symbol("consumer");
+    const callback = vi.fn();
+    const cleanup = store.registerConsumer(consumerId, callback);
 
-    expect(callbacks.get).toHaveBeenCalledTimes(0);
-    expect(store.state.count).toEqual(0);
-    expect(callbacks.get).toHaveBeenCalledTimes(1);
+    expect(cleanup).toEqual(expect.any(Function));
+  });
+});
 
-    expect(callbacks.set).toHaveBeenCalledTimes(0);
-    store.state.count = 1;
-    expect(callbacks.set).toHaveBeenCalledTimes(1);
+describe("createConsumer", () => {
+  it("returns a proxy that wraps the store's state", () => {
+    const store = createStore({ foo: { bar: "baz" } });
 
-    expect(callbacks.delete).toHaveBeenCalledTimes(0);
-    delete store.state.count;
-    expect(callbacks.delete).toHaveBeenCalledTimes(1);
+    const callback = vi.fn();
+    const consumer = createConsumer(store, callback);
+
+    expect(consumer.proxy).toEqual(store.state);
+  });
+
+  it("calls the callback when accessed data changes", () => {
+    const store = createStore({ a: 1, b: 2 });
+
+    const callback = vi.fn();
+    const consumer = createConsumer(store, callback);
+
+    expect(consumer.proxy.a).toEqual(1);
+    expect(callback).toHaveBeenCalledTimes(0);
+
+    store.state.b = 2;
+    expect(store.state.b).toEqual(2);
+    expect(callback).toHaveBeenCalledTimes(0);
+
+    store.state.a = 2;
+    expect(store.state.a).toEqual(2);
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls the callback when accessed getter dependencies change", () => {
+    const store = createStore({
+      a: 5,
+      b: 5,
+      get sum() {
+        return this.a + this.b;
+      },
+    });
+
+    const callback = vi.fn();
+    const consumer = createConsumer(store, callback);
+
+    store.state.a = 10;
+    expect(store.state.sum).toEqual(15);
+    expect(callback).toHaveBeenCalledTimes(0);
+
+    expect(consumer.proxy.sum).toEqual(15);
+    expect(callback).toHaveBeenCalledTimes(0);
+
+    store.state.a = 20;
+    expect(store.state.sum).toEqual(25);
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it("destroys the consumer", () => {
+    const store = createStore({ a: 1, b: 2 });
+    const consumer = createConsumer(store, vi.fn());
+
+    expect(consumer.proxy.a).toEqual(1);
+
+    consumer.destroy();
+    expect(() => consumer.proxy.a).toThrow(TypeError);
   });
 });
 
@@ -212,25 +259,6 @@ for (const { type, create } of storeDefinitions) {
         const { result } = renderHook(() => useStore(store));
 
         expect(result.current).toEqual(store.state);
-      });
-
-      it("subscribes and unsubscribes to the store", () => {
-        const store = create();
-
-        const originalSubscribe = store.subscribe;
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        let unsubscribe = () => {};
-        const subscribe = vi.fn((...args: unknown[]) => {
-          unsubscribe = vi.fn(originalSubscribe(...(args as Parameters<typeof originalSubscribe>)));
-          return unsubscribe;
-        });
-        vi.spyOn(store, "subscribe").mockImplementation(subscribe);
-
-        const { unmount } = renderHook(() => useStore(store));
-        expect(unsubscribe).toHaveBeenCalledTimes(0);
-
-        unmount();
-        expect(unsubscribe).toHaveBeenCalledTimes(1);
       });
 
       it("rerenders when accessed data changes", () => {
@@ -303,26 +331,23 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(1);
       });
 
-      if (type !== "self-ref-store-instance") {
-        it("rerenders when accessed computed data's dependencies change", () => {
-          const store = create();
+      it("rerenders when accessed computed data's dependencies change", () => {
+        const store = create();
 
-          const { result } = renderHook(() => useStoreWithRenderCount(store));
-          expect(result.current.count).toEqual(1);
+        const { result } = renderHook(() => useStoreWithRenderCount(store));
+        expect(result.current.count).toEqual(1);
 
-          // access store.doubleA
-          expect(result.current.store.doubleA).toEqual(6);
-          expect(result.current.count).toEqual(1);
+        // access store.doubleA
+        expect(result.current.store.doubleA).toEqual(6);
+        expect(result.current.count).toEqual(1);
 
-          // mutate store.nested.a
-          act(() => {
-            store.state.nested.a = 100;
-          });
-          expect(result.current.store.doubleA).toEqual(200);
-          console.log(store.state.doubleA);
-          expect(result.current.count).toEqual(2);
+        // mutate store.nested.a
+        act(() => {
+          store.state.nested.a = 100;
         });
-      }
+        expect(result.current.store.doubleA).toEqual(200);
+        expect(result.current.count).toEqual(2);
+      });
     });
   });
 }

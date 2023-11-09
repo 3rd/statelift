@@ -8,7 +8,7 @@ export interface StoreTestAProps {
 }
 
 export const StoreTestA = ({ store }: StoreTestAProps) => {
-  const state = useStore(store, { label: "A" });
+  const state = useStore(store);
   const renderCount = useRenderCount();
 
   const handleDirectClick = () => {

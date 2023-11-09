@@ -1,173 +1,175 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useSyncExternalStore } from "react";
-import {
-  ProxyCacheValue,
-  ProxyCallbacks,
-  createDeepProxy,
-  createRootProxy,
-  unwrapProxy,
-} from "./proxy";
+import { createRootProxy } from "./proxy";
 import { isFunction } from "./utils";
 
-type StoreWatchers = {
-  [K in keyof ProxyCallbacks]: Set<ProxyCallbacks[K]>;
-};
-
-interface Store<T extends {}> {
+type Store<T extends {}> = {
   state: T;
-  subscribe: <K extends keyof StoreWatchers>(event: K, watcher: ProxyCallbacks[K]) => () => void;
-}
-
-type StoreOptions<T extends {}> = {
-  targetOrBuilder: T | ((root: T) => T);
+  registerConsumer: (id: ConsumerID, callback: () => void) => () => void;
+};
+type Consumer<T extends {}> = {
+  proxy: T;
+  destroy: () => void;
 };
 
-class StoreManager<T extends {}> {
-  proxy: ProxyCacheValue<T>;
-  watchers: StoreWatchers = {
-    get: new Set(),
-    set: new Set(),
-    delete: new Set(),
-  };
+type ConsumerID = Symbol;
+type ConsumerTarget = {};
+type ConsumerTargetProp = Symbol | string;
+type DependenciesMap = WeakMap<ConsumerTarget, Map<ConsumerTargetProp, Set<ConsumerID>>>;
+type ConsumerCallbacksMap = WeakMap<ConsumerID, () => void>;
+type ConsumerDependenciesMap = WeakMap<ConsumerID, Set<Set<ConsumerID>>>;
 
-  constructor({ targetOrBuilder }: StoreOptions<T>) {
-    if (isFunction(targetOrBuilder)) {
-      const root = createRootProxy(targetOrBuilder as (root: T) => T, {
-        callbacks: {
-          set: this.handleRootSet,
-        },
-      });
+let currentConsumerId: ConsumerID | null = null;
 
-      this.proxy = createDeepProxy(root, {
-        rootSymbol: Symbol("computed-store"),
-        callbacks: {
-          get: this.handleGet,
-          set: this.handleSet,
-          delete: this.handleDelete,
-        },
-      });
-    } else {
-      this.proxy = createDeepProxy(targetOrBuilder, {
-        callbacks: {
-          get: this.handleGet,
-          set: this.handleSet,
-          delete: this.handleDelete,
-        },
-      }) as ProxyCacheValue<T>;
-    }
-  }
+export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): Store<T> => {
+  const targetDependenciesMap: DependenciesMap = new WeakMap();
+  const consumerCallbacksMap: ConsumerCallbacksMap = new WeakMap();
+  const consumerDependenciesMap: ConsumerDependenciesMap = new WeakMap();
 
-  get state() {
-    return this.proxy.instance;
-  }
+  const notifyConsumers = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
+    const targetDependencies = targetDependenciesMap.get(target);
+    if (!targetDependencies) return;
 
-  private handleGet = (proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => {
-    // console.log("@manager get", target, key);
-    for (const watcher of this.watchers.get) {
-      watcher(proxy, target, key, value);
+    const consumers = targetDependencies.get(prop);
+    if (!consumers) return;
+
+    for (const consumerId of consumers) {
+      const callback = consumerCallbacksMap.get(consumerId);
+      if (!callback) throw new Error("Consumer callback not found");
+      callback();
     }
   };
 
-  private handleSet = (proxy: ProxyCacheValue, target: {}, key: string | symbol, value: any) => {
-    // console.log("@manager set", target, key, value);
-    for (const watcher of this.watchers.set) {
-      watcher(proxy, target, key, value);
-    }
-  };
+  const state = createRootProxy(builder, {
+    callbacks: {
+      get: (target, prop, _receiver) => {
+        if (!currentConsumerId) return;
 
-  private handleRootSet = (target: {}, prop: string | symbol, value: any) => {
-    // console.log("@manager root set", target, key, value);
-    for (const watcher of this.watchers.set) {
-      watcher(this.proxy, target, prop, value);
-    }
-  };
+        let targetDependencies = targetDependenciesMap.get(target);
+        if (!targetDependencies) {
+          targetDependencies = new Map();
+          targetDependenciesMap.set(target, targetDependencies);
+        }
 
-  private handleDelete = (proxy: ProxyCacheValue, target: {}, key: string | symbol) => {
-    // console.log("@manager delete", target, key);
-    for (const watcher of this.watchers.delete) {
-      watcher(proxy, target, key);
-    }
-  };
+        let propConsumers = targetDependencies.get(prop);
+        if (!propConsumers) {
+          propConsumers = new Set();
+          targetDependencies.set(prop, propConsumers);
+        }
+        propConsumers.add(currentConsumerId);
 
-  subscribe: Store<T>["subscribe"] = (event, watcher) => {
-    this.watchers[event].add(watcher);
+        const consumerDependencies = consumerDependenciesMap.get(currentConsumerId);
+        if (!consumerDependencies) throw new Error("Consumer dependencies not found");
+        consumerDependencies.add(propConsumers);
+      },
+      set: (target, prop, _value, _receiver) => {
+        notifyConsumers(target, prop);
+      },
+      deleteProperty: (target, prop) => {
+        notifyConsumers(target, prop);
+      },
+    },
+  });
+
+  const registerConsumer = (id: ConsumerID, callback: () => void) => {
+    consumerCallbacksMap.set(id, callback);
+    consumerDependenciesMap.set(id, new Set());
+
     return () => {
-      this.watchers[event].delete(watcher);
+      consumerCallbacksMap.delete(id);
+
+      const dependencySets = consumerDependenciesMap.get(id);
+      if (!dependencySets) return;
+
+      for (const set of dependencySets) {
+        set.delete(id);
+      }
+      consumerDependenciesMap.delete(id);
     };
   };
-}
+
+  return { state, registerConsumer };
+};
 
 export const createStore = <T extends {}>(target: T) => {
-  const manager = new StoreManager({ targetOrBuilder: target });
-
+  const builder = isFunction(target) ? target : () => target;
+  const store = createStoreFromBuilder(builder as (root: T) => T);
   return {
-    state: manager.state as T extends (...args: any[]) => any ? ReturnType<T> : T,
-    subscribe: manager.subscribe.bind(manager),
+    state: store.state as T extends (...args: any[]) => any ? ReturnType<T> : T,
+    registerConsumer: store.registerConsumer,
   };
 };
 
-let useStoreHelperCount = 0;
+let consumerIdCounter = 0;
+export const createConsumer = <T extends {}>(
+  store: Store<T>,
+  callback: () => void
+): Consumer<T> => {
+  const consumerId = Symbol(`store-consumer:${consumerIdCounter++}`);
 
-type UseStoreOptions = {
-  label?: string;
+  const unregisterConsumer = store.registerConsumer(consumerId, callback);
+
+  const handlers: ProxyHandler<{}> = {
+    get(target, prop, receiver) {
+      currentConsumerId = consumerId;
+
+      try {
+        const result = Reflect.get(target, prop, receiver);
+        if (typeof result === "object" && result !== null && !(result instanceof Function)) {
+          return new Proxy(result, handlers);
+        }
+        return result;
+      } finally {
+        currentConsumerId = null;
+      }
+    },
+  };
+  const { proxy, revoke } = Proxy.revocable(store.state, handlers);
+
+  const destroy = () => {
+    unregisterConsumer();
+    revoke();
+  };
+
+  return {
+    proxy: proxy as T,
+    destroy,
+  };
 };
 
-export const useStore = <T extends {}>(store: Store<T>, opts?: UseStoreOptions) => {
+// https://github.com/facebook/react/issues/24670#issuecomment-1792572985
+export const useStore = <T extends {}>(store: Store<T>) => {
   const updateRef = useRef({});
-  const observedPropertiesRef = useRef<Map<any, Set<string | symbol>>>(new Map());
 
-  // if (opts?.label) console.log(`---------- @useStore ${opts.label} -----------`);
+  const memoizedConsumer = useMemo(() => {
+    let effectActiveCounterRef = 0;
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    let callbackRef: () => void = () => {};
 
-  const singleton = useMemo(() => {
-    const handleGet = (_: ProxyCacheValue, target: any, key: string | symbol) => {
-      const unwrappedTarget = unwrapProxy(target);
-      // console.log("@useStore get", { proxy, target, key, unwrappedTarget });
-
-      if (observedPropertiesRef.current.has(unwrappedTarget)) {
-        observedPropertiesRef.current.get(unwrappedTarget)!.add(key);
-      } else {
-        observedPropertiesRef.current.set(unwrappedTarget, new Set([key]));
-      }
-    };
-
-    const createHandleManagerUpdate =
-      (callback: () => void) => (_: ProxyCacheValue, target: any, key: string | symbol) => {
-        const unwrappedTarget = unwrapProxy(target);
-
-        // console.log("@useStore handle manager update", { target, key, unwrappedTarget });
-        // console.log("DEPS:", observedPropertiesRef.current.entries());
-        const observedProperties = observedPropertiesRef.current.get(unwrappedTarget);
-        if (!observedProperties || !observedProperties.has(key)) return;
-        updateRef.current = {};
-        callback();
-      };
-
-    const accessProxy = createDeepProxy(store.state, {
-      // eslint-disable-next-line sonarjs/no-nested-template-literals
-      rootSymbol: Symbol(`useStore:${opts?.label ? `${opts.label}:` : ""}${++useStoreHelperCount}`),
-      callbacks: {
-        get: handleGet,
-      },
+    const consumer = createConsumer(store, () => {
+      updateRef.current = {};
+      callbackRef();
     });
 
     const subscribe = (callback: () => void) => {
-      const subscriptions: (() => void)[] = [];
-      const handleManagerUpdate = createHandleManagerUpdate(callback);
-      subscriptions.push(store.subscribe("set", handleManagerUpdate));
-      subscriptions.push(store.subscribe("delete", handleManagerUpdate));
+      callbackRef = callback;
+      effectActiveCounterRef++;
 
       return () => {
-        for (const unsubscribe of subscriptions) {
-          unsubscribe();
-        }
+        effectActiveCounterRef--;
+
+        setTimeout(() => {
+          if (effectActiveCounterRef === 0) {
+            consumer.destroy();
+          }
+        }, 0);
       };
     };
 
-    return { subscribe, accessProxy };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return { subscribe, proxy: consumer.proxy };
   }, [store]);
 
-  useSyncExternalStore(singleton.subscribe, () => updateRef.current);
+  useSyncExternalStore(memoizedConsumer.subscribe, () => updateRef.current);
 
-  return singleton.accessProxy.instance;
+  return memoizedConsumer.proxy;
 };

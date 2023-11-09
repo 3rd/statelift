@@ -8,7 +8,7 @@ export interface StoreTestDProps {
 }
 
 export const StoreTestD = ({ store }: StoreTestDProps) => {
-  const state = useStore(store, { label: "D" });
+  const state = useStore(store);
   const renderCount = useRenderCount();
 
   return (

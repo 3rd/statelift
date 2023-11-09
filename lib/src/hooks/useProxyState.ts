@@ -7,9 +7,8 @@ export const useProxyState = <T extends {}>(target: T): T => {
 
   if (!state.current) {
     state.current = createDeepProxy(target, {
-      isRoot: true,
       callbacks: { set: forceUpdate },
-    }).instance;
+    });
   }
 
   return state.current;

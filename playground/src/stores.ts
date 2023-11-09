@@ -1,6 +1,18 @@
 /* eslint-disable no-param-reassign */
 import { createStore } from "reactlift";
 
+type Store = {
+  top: number;
+  nested: {
+    a: number;
+    b: number;
+    c: number;
+  };
+  doubleA: number;
+  incrementA: (amount?: number) => void;
+  incrementB: (amount?: number) => void;
+};
+
 export const createSimpleStore = () =>
   createStore({
     top: 10,
@@ -37,7 +49,6 @@ export const createSelfReferencingStoreWithRootArg = () =>
       return this.nested.a * 2;
     },
     incrementA(amount = 10) {
-      console.log({ root, this: this });
       root.nested.a += amount;
     },
     incrementB(amount = 10) {
@@ -46,17 +57,6 @@ export const createSelfReferencingStoreWithRootArg = () =>
   }));
 
 export const createSelfReferencingStoreWithStoreInstance = () => {
-  type Store = {
-    top: number;
-    nested: {
-      a: number;
-      b: number;
-      c: number;
-    };
-    doubleA: number;
-    incrementA: (amount?: number) => void;
-    incrementB: (amount?: number) => void;
-  };
   const store = createStore({
     top: 10,
     nested: {
