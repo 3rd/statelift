@@ -4,8 +4,23 @@ import { createConsumer, createStore, useStore } from "./store";
 import { renderHook, act } from "@testing-library/react";
 import { useRef } from "react";
 
+type Store = {
+  top: number;
+  arr: number[];
+  nested: {
+    a: number;
+    b: number;
+    doubleTop: number;
+    increaseTop: () => void;
+  };
+  doubleA: number;
+  increaseNestedA: (amount?: number) => void;
+  toDelete: number | undefined;
+  deleteMe: () => void;
+};
+
 const createSimpleStore = () =>
-  createStore({
+  createStore<Store>({
     top: 2,
     arr: [1, 2, 3],
     nested: {
@@ -37,7 +52,7 @@ const createSelfReferencingStoreWithRootArg = () => {
   // - https://github.com/microsoft/TypeScript/issues/56311
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return createStore((root: any) => ({
+  return createStore((root: Store) => ({
     top: 2,
     arr: [1, 2, 3],
     nested: {
@@ -64,20 +79,6 @@ const createSelfReferencingStoreWithRootArg = () => {
 };
 
 const createSelfReferencingStoreWithStoreInstance = () => {
-  type Store = {
-    top: number;
-    arr: number[];
-    nested: {
-      a: number;
-      b: number;
-      doubleTop: number;
-      increaseTop: () => void;
-    };
-    doubleA: number;
-    increaseNestedA: (amount?: number) => void;
-    toDelete: number | undefined;
-    deleteMe: () => void;
-  };
   const store = createStore({
     top: 2,
     arr: [1, 2, 3],
