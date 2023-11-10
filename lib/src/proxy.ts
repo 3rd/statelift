@@ -1,4 +1,6 @@
 /* eslint-disable no-param-reassign */
+const UNWRAP_PROXY_KEY = Symbol("unwrapped-target");
+
 export type ProxyCallbacks = {
   get: (target: {}, prop: string | symbol, receiver: {}) => void;
   set: (target: {}, prop: string | symbol, value: unknown, receiver: {}) => void;
@@ -19,6 +21,8 @@ export const createDeepProxy = <T extends object>(
 
   const handler: ProxyHandler<{}> = {
     get(target, prop, receiver) {
+      if (prop === UNWRAP_PROXY_KEY) return target;
+
       const value = Reflect.get(target, prop, receiver);
       let result = value;
       if (typeof value === "object" && value !== null && !(value instanceof Function)) {
@@ -66,4 +70,8 @@ export const createRootProxy = <T extends object>(
   Object.defineProperties(skeleton, descriptors);
 
   return root;
+};
+
+export const unwrapProxy = <T extends {}>(object: T): T => {
+  return (object as unknown as { [UNWRAP_PROXY_KEY]: T })[UNWRAP_PROXY_KEY];
 };

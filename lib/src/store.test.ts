@@ -150,7 +150,7 @@ describe("createConsumer", () => {
     expect(consumer.proxy).toEqual(store.state);
   });
 
-  it("calls the callback when accessed data changes", () => {
+  it("calls the callback when the accessed data changes", () => {
     const store = createStore({ a: 1, b: 2 });
 
     const callback = vi.fn();
@@ -165,6 +165,23 @@ describe("createConsumer", () => {
 
     store.state.a = 2;
     expect(store.state.a).toEqual(2);
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call the callback when the accessed data is set to the same value", () => {
+    const store = createStore({ a: 1, b: 2 });
+
+    const callback = vi.fn();
+    const consumer = createConsumer(store, callback);
+
+    expect(consumer.proxy.a).toEqual(1);
+    expect(callback).toHaveBeenCalledTimes(0);
+
+    store.state.a = 2;
+    expect(store.state.a).toEqual(2);
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    store.state.a = 2;
     expect(callback).toHaveBeenCalledTimes(1);
   });
 
@@ -356,6 +373,43 @@ for (const { type, create } of storeDefinitions) {
         });
         expect(result.current.state.doubleA).toEqual(200);
         expect(result.current.count).toEqual(2);
+      });
+
+      it("does rerender a list consumer when items are added / removed", () => {
+        const store = createStore({ items: [{ value: 1 }, { value: 2 }] });
+        const { result } = renderHook(() => useStoreWithRenderCount(store));
+
+        // access store.items
+        expect(result.current.state.items.length).toEqual(2);
+        expect(result.current.count).toEqual(1);
+
+        // rerender when an item is added
+        act(() => {
+          store.state.items.push({ value: 3 });
+        });
+        expect(result.current.count).toEqual(2);
+
+        // rerender when an item is removed
+        act(() => {
+          store.state.items.pop();
+        });
+        expect(result.current.count).toEqual(3);
+      });
+
+      it("does not rerender a list consumer when an item is changed", () => {
+        const state = { items: [{ value: 1 }, { value: 2 }] };
+        const store = createStore(state);
+        const { result } = renderHook(() => useStoreWithRenderCount(store));
+
+        // access store.items
+        expect(result.current.state.items.length).toEqual(2);
+        expect(result.current.count).toEqual(1);
+
+        // mutate store.items[0]
+        act(() => {
+          store.state.items[0].value = 10;
+        });
+        expect(result.current.count).toEqual(1);
       });
 
       it("supports custom selector", () => {
