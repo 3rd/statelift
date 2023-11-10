@@ -3,15 +3,16 @@ import { useMemo, useRef, useSyncExternalStore } from "react";
 import { createRootProxy } from "./proxy";
 import { isFunction } from "./utils";
 
-type Store<T extends {}> = {
+export type Store<T extends {}> = {
   state: T;
   registerConsumer: (id: ConsumerID, callback: () => void) => () => void;
 };
+export type Selector<T extends {}, R> = (state: T) => R;
+
 type Consumer<T extends {}> = {
   proxy: T;
   destroy: () => void;
 };
-
 type ConsumerID = symbol;
 type ConsumerTarget = {};
 type ConsumerTargetProp = string | symbol;
@@ -137,29 +138,40 @@ export const createConsumer = <T extends {}>(
   };
 };
 
-// https://github.com/facebook/react/issues/24670#issuecomment-1792572985
-export const useStore = <T extends {}>(store: Store<T>) => {
+const initRefValue = {};
+
+export function useStore<T extends {}>(store: Store<T>): T;
+export function useStore<T extends {}, R>(store: Store<T>, selector: Selector<T, R>): R;
+export function useStore<T extends {}, R>(store: Store<T>, selector?: Selector<T, R>) {
   const updateRef = useRef({});
+  const valueRef = useRef<R | typeof initRefValue>(initRefValue as unknown as R);
+  const selectorRef = useRef(selector);
+
+  selectorRef.current = selector;
 
   const memoizedConsumer = useMemo(() => {
-    let effectActiveCounterRef = 0;
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    let callbackRef: () => void = () => {};
+    let referenceCount = 0;
+    let callbackRef = () => {};
 
     const consumer = createConsumer(store, () => {
+      if (selectorRef.current) {
+        const newValue = selectorRef.current(consumer.proxy as T);
+        if (Object.is(newValue, valueRef.current)) return;
+        valueRef.current = newValue;
+      }
       updateRef.current = {};
       callbackRef();
     });
 
     const subscribe = (callback: () => void) => {
       callbackRef = callback;
-      effectActiveCounterRef++;
+      referenceCount++;
 
       return () => {
-        effectActiveCounterRef--;
+        referenceCount--;
 
         setTimeout(() => {
-          if (effectActiveCounterRef === 0) {
+          if (referenceCount === 0) {
             consumer.destroy();
           }
         }, 0);
@@ -171,5 +183,12 @@ export const useStore = <T extends {}>(store: Store<T>) => {
 
   useSyncExternalStore(memoizedConsumer.subscribe, () => updateRef.current);
 
-  return memoizedConsumer.proxy;
-};
+  if (selectorRef.current) {
+    if (valueRef.current === initRefValue) {
+      valueRef.current = selectorRef.current(memoizedConsumer.proxy);
+    }
+    return valueRef.current;
+  }
+
+  return memoizedConsumer.proxy as T;
+}

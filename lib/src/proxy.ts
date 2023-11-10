@@ -9,7 +9,7 @@ export const createDeepProxy = <T extends object>(
   object: T,
   options?: {
     callbacks: {
-      get?: (target: {}, prop: string | symbol, receiver: {}) => void;
+      get?: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
       set?: (target: {}, prop: string | symbol, value: unknown, receiver: {}) => void;
       deleteProperty?: (target: {}, prop: string | symbol) => void;
     };
@@ -20,14 +20,18 @@ export const createDeepProxy = <T extends object>(
   const handler: ProxyHandler<{}> = {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
-      options?.callbacks?.get?.(target, prop, receiver);
+      let result = value;
       if (typeof value === "object" && value !== null && !(value instanceof Function)) {
-        if (proxyCache.has(value)) return proxyCache.get(value);
-        const proxy = new Proxy(value, handler);
-        proxyCache.set(value, proxy);
-        return proxy;
+        if (proxyCache.has(value)) {
+          result = proxyCache.get(value);
+        } else {
+          const proxy = new Proxy(value, handler);
+          proxyCache.set(value, proxy);
+          result = proxy;
+        }
       }
-      return value;
+      options?.callbacks?.get?.(target, prop, receiver, result);
+      return result;
     },
     set(target, prop, value, receiver) {
       const result = Reflect.set(target, prop, value, receiver);
@@ -48,7 +52,7 @@ export const createRootProxy = <T extends object>(
   builder: (root: T) => T,
   options?: {
     callbacks: {
-      get?: (target: {}, prop: string | symbol, receiver: {}) => void;
+      get?: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
       set?: (target: {}, prop: string | symbol, value: unknown, receiver: {}) => void;
       deleteProperty?: (target: {}, prop: string | symbol) => void;
     };

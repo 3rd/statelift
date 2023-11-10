@@ -22,11 +22,11 @@ describe("createDeepProxy", () => {
     // access 1 time: foo
     expect(proxy.foo).toBe("boo");
     expect(callbacks.get).toHaveBeenCalledTimes(1);
-    expect(callbacks.get).toHaveBeenNthCalledWith(1, target, "foo", proxy);
+    expect(callbacks.get).toHaveBeenNthCalledWith(1, target, "foo", proxy, "boo");
 
     // access 2 times: bar, baz
     expect(proxy.bar.baz).toBe("zoo");
-    expect(callbacks.get).toHaveBeenLastCalledWith(target.bar, "baz", expect.anything());
+    expect(callbacks.get).toHaveBeenLastCalledWith(target.bar, "baz", expect.anything(), "zoo");
   });
 
   it("mutates the target and calls the set callback when a property is set", () => {

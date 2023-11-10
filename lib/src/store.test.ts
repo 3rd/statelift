@@ -1,10 +1,10 @@
 /* eslint-disable no-param-reassign */
 import { vi } from "vitest";
-import { createConsumer, createStore, useStore } from "./store";
+import { Selector, Store, createConsumer, createStore, useStore } from "./store";
 import { renderHook, act } from "@testing-library/react";
 import { useRef } from "react";
 
-type Store = {
+type State = {
   top: number;
   arr: number[];
   nested: {
@@ -20,7 +20,7 @@ type Store = {
 };
 
 const createSimpleStore = () =>
-  createStore<Store>({
+  createStore<State>({
     top: 2,
     arr: [1, 2, 3],
     nested: {
@@ -52,7 +52,7 @@ const createSelfReferencingStoreWithRootArg = () => {
   // - https://github.com/microsoft/TypeScript/issues/56311
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return createStore((root: Store) => ({
+  return createStore((root: State) => ({
     top: 2,
     arr: [1, 2, 3],
     nested: {
@@ -102,16 +102,24 @@ const createSelfReferencingStoreWithStoreInstance = () => {
     deleteMe() {
       delete store.state.toDelete;
     },
-  } as Store);
+  } as State);
   return store;
 };
 
-const useStoreWithRenderCount = (store: ReturnType<typeof createSimpleStore>) => {
-  const innerStore = useStore(store);
+export function useStoreWithRenderCount<T extends {}>(store: Store<T>): { count: number; state: T };
+export function useStoreWithRenderCount<T extends {}, R>(
+  store: Store<T>,
+  selector: Selector<T, R>
+): { count: number; state: R };
+export function useStoreWithRenderCount<T extends {}, R>(
+  store: Store<T>,
+  selector?: Selector<T, R>
+) {
+  const innerStore = useStore(store, selector!);
   const count = useRef(0);
   count.current++;
-  return { count: count.current, store: innerStore };
-};
+  return { count: count.current, state: innerStore };
+}
 
 describe("createStore", () => {
   it("creates a store with the given initial state", () => {
@@ -269,14 +277,14 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(1);
 
         // access store.nested.a
-        expect(result.current.store.nested.a).toEqual(3);
+        expect(result.current.state.nested.a).toEqual(3);
         expect(result.current.count).toEqual(1);
 
         // mutate store.nested.a
         act(() => {
           store.state.nested.a = 100;
         });
-        expect(result.current.store.nested.a).toEqual(100);
+        expect(result.current.state.nested.a).toEqual(100);
         expect(result.current.count).toEqual(2);
       });
 
@@ -287,7 +295,7 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(1);
 
         // access store.nested.a
-        expect(result.current.store.nested.a).toEqual(3);
+        expect(result.current.state.nested.a).toEqual(3);
         expect(result.current.count).toEqual(1);
 
         // mutate store.nested.b
@@ -304,14 +312,14 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(1);
 
         // access store.arr
-        expect(result.current.store.toDelete).toEqual(1);
+        expect(result.current.state.toDelete).toEqual(1);
         expect(result.current.count).toEqual(1);
 
         // delete item
         act(() => {
           delete store.state.toDelete;
         });
-        expect(result.current.store.toDelete).toEqual(undefined);
+        expect(result.current.state.toDelete).toEqual(undefined);
         expect(result.current.count).toEqual(2);
       });
 
@@ -322,7 +330,7 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(1);
 
         // access store.arr
-        expect(result.current.store.top).toEqual(2);
+        expect(result.current.state.top).toEqual(2);
         expect(result.current.count).toEqual(1);
 
         // delete item
@@ -339,14 +347,53 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(1);
 
         // access store.doubleA
-        expect(result.current.store.doubleA).toEqual(6);
+        expect(result.current.state.doubleA).toEqual(6);
         expect(result.current.count).toEqual(1);
 
         // mutate store.nested.a
         act(() => {
           store.state.nested.a = 100;
         });
-        expect(result.current.store.doubleA).toEqual(200);
+        expect(result.current.state.doubleA).toEqual(200);
+        expect(result.current.count).toEqual(2);
+      });
+
+      it("supports custom selector", () => {
+        const store = create();
+
+        const { result } = renderHook(() =>
+          useStore(store, (state) => ({
+            a: state.nested.a,
+            b: state.nested.b,
+            sum: state.nested.a + state.nested.b,
+          }))
+        );
+
+        expect(result.current).toEqual({ a: 3, b: 5, sum: 8 });
+      });
+
+      it("doesn't rerender when accessed data changes but the selector returns the same value", () => {
+        const store = create();
+
+        const { result } = renderHook(() =>
+          useStoreWithRenderCount(store, (state) => state.nested.a + state.nested.b)
+        );
+
+        expect(result.current.state).toEqual(8);
+        expect(result.current.count).toEqual(1);
+
+        act(() => {
+          store.state.nested.a = 10;
+        });
+
+        expect(result.current.state).toEqual(15);
+        expect(result.current.count).toEqual(2);
+
+        act(() => {
+          store.state.nested.a = 10;
+        });
+
+        expect(result.current.state).toEqual(15);
         expect(result.current.count).toEqual(2);
       });
     });
