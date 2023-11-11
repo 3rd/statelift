@@ -121,16 +121,14 @@ const store = createStore((root) => ({
     b: 5,
   },
   get sum() {
-    // "this" is "store" here, because we're at the root
-    return this.nested.a + this.nested.b;
+    return root.nested.a + root.nested.b;
   },
   increaseA(amount: number) {
-    this.nested.a += amount;
+    root.nested.a += amount;
   },
   yummy: {
     get doubleA() {
-      // "this" can't work here
-      return store.nested.a * 2;
+      return root.nested.a * 2;
     },
   },
 }));
