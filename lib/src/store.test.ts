@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-magic-numbers */
 /* eslint-disable no-param-reassign */
 import { vi } from "vitest";
 import { Selector, Store, createConsumer, createStore, useStore } from "./store";
@@ -134,7 +135,7 @@ describe("createStore", () => {
 
     const consumerId = Symbol("consumer");
     const callback = vi.fn();
-    const cleanup = store.registerConsumer(consumerId, callback);
+    const cleanup = store.registerConsumer(consumerId, { rerender: callback, revoke: vi.fn() });
 
     expect(cleanup).toEqual(expect.any(Function));
   });
@@ -396,20 +397,31 @@ for (const { type, create } of storeDefinitions) {
         expect(result.current.count).toEqual(3);
       });
 
-      it("does not rerender a list consumer when an item is changed", () => {
-        const state = { items: [{ value: 1 }, { value: 2 }] };
+      it("does not rerender a list consumer when an unwatched property of an item is changed", () => {
+        const state = {
+          items: Array.from({ length: 5 }, (_, i) => ({ id: i, value: i })),
+        };
         const store = createStore(state);
         const { result } = renderHook(() => useStoreWithRenderCount(store));
 
-        // access store.items
-        expect(result.current.state.items.length).toEqual(2);
+        // access store.items and store.items[index].id
+        expect(result.current.state.items.length).toEqual(5);
+        for (let i = 0; i < 5; i++) {
+          expect(result.current.state.items[i].id).toEqual(i);
+        }
         expect(result.current.count).toEqual(1);
 
-        // mutate store.items[0]
+        // mutate store.items[index].id
         act(() => {
-          store.state.items[0].value = 10;
+          store.state.items[0].id += 1;
         });
-        expect(result.current.count).toEqual(1);
+        expect(result.current.count).toEqual(2);
+
+        // mutate store.items[index].value
+        act(() => {
+          store.state.items[0].value += 1;
+        });
+        expect(result.current.count).toEqual(2);
       });
 
       it("supports custom selector", () => {

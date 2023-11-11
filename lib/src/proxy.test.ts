@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-magic-numbers */
 /* eslint-disable no-param-reassign */
 import { vi } from "vitest";
 import { ProxyCallbacks, createDeepProxy, createRootProxy } from "./proxy";
