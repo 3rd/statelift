@@ -213,3 +213,5 @@ const List = (items: Item[]) => {
 ```
 
 ### Benchmarks
+
+![image](https://github.com/3rd/statelift/assets/59587503/eb09b938-3bfe-4283-8f46-ac14dd572da8)
