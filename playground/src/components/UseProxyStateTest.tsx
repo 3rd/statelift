@@ -1,5 +1,5 @@
 import React from "react";
-import { useProxyState } from "reactlift";
+import { useProxyState } from "statelift";
 import { useRenderCount } from "../hooks/useRenderCount";
 
 const UseProxyStateTest = () => {

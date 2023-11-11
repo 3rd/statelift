@@ -9,8 +9,8 @@ export default defineConfig({
   compilation: {
     resolve: {
       alias: {
-        reactlift: path.join(process.cwd(), "../lib/src/index.ts"),
-        // reactlift: path.join(process.cwd(), "../lib/dist"),
+        statelift: path.join(process.cwd(), "../lib/src/index.ts"),
+        // statelift: path.join(process.cwd(), "../lib/dist"),
       },
     },
     external: ["node:fs"],

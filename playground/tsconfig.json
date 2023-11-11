@@ -11,7 +11,7 @@
     "downlevelIteration": true,
     "moduleResolution": "Node",
     "paths": {
-      "reactlift": ["../lib/src/index.ts"]
+      "statelift": ["../lib/src/index.ts"]
     }
   },
   "include": ["src"],

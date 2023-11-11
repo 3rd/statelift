@@ -1,5 +1,5 @@
 /* eslint-disable no-param-reassign */
-import { createStore } from "reactlift";
+import { createStore } from "statelift";
 
 type Store = {
   top: number;
