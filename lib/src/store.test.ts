@@ -411,15 +411,15 @@ for (const { type, create } of storeDefinitions) {
         }
         expect(result.current.count).toEqual(1);
 
-        // mutate store.items[index].id
-        act(() => {
-          store.state.items[0].id += 1;
-        });
-        expect(result.current.count).toEqual(2);
-
-        // mutate store.items[index].value
+        // mutate store.items[index].value (unwatched)
         act(() => {
           store.state.items[0].value += 1;
+        });
+        expect(result.current.count).toEqual(1);
+
+        // mutate store.items[index].id (watched)
+        act(() => {
+          store.state.items[0].id += 1;
         });
         expect(result.current.count).toEqual(2);
       });

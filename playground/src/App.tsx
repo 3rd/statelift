@@ -1,24 +1,20 @@
-import React from "react";
-import { useRenderCount } from "./hooks/useRenderCount";
-import { UseProxyStateTest } from "./components/UseProxyStateTest";
-import { StoreTest } from "./components/StoreTest";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { Home } from "./pages/Home";
+import { List } from "./pages/List";
 
-import "./dev";
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Home />,
+  },
+  {
+    path: "/list",
+    element: <List />,
+  },
+]);
 
-const App = () => {
-  const renderCount = useRenderCount();
+function App() {
+  return <RouterProvider router={router} />;
+}
 
-  return (
-    <>
-      <h1>App</h1>
-      <p>renders: {renderCount}</p>
-      <p>
-        check <code>window.stores</code> for direct store access
-      </p>
-      <UseProxyStateTest />
-      <StoreTest />
-    </>
-  );
-};
-
-export { App };
+export default App;

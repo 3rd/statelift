@@ -2,7 +2,7 @@
 const UNWRAP_PROXY_KEY = Symbol("unwrapped-target");
 
 export type ProxyCallbacks = {
-  get: (target: {}, prop: string | symbol, receiver: {}) => void;
+  get: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
   set: (target: {}, prop: string | symbol, value: unknown, receiver: {}) => void;
   deleteProperty: (target: {}, prop: string | symbol) => void;
 };
@@ -10,14 +10,10 @@ export type ProxyCallbacks = {
 export const createDeepProxy = <T extends object>(
   object: T,
   options?: {
-    callbacks: {
-      get?: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
-      set?: (target: {}, prop: string | symbol, value: unknown, receiver: {}) => void;
-      deleteProperty?: (target: {}, prop: string | symbol) => void;
-    };
+    callbacks: Partial<ProxyCallbacks>;
   }
 ) => {
-  const proxyCache = new Map<{}, {}>();
+  const proxyCache = new WeakMap<{}, {}>();
 
   const handler: ProxyHandler<{}> = {
     get(target, prop, receiver) {
@@ -52,14 +48,10 @@ export const createDeepProxy = <T extends object>(
   return new Proxy(object, handler) as T;
 };
 
-export const createRootProxy = <T extends object>(
+export const createRootProxy = <T extends {}>(
   builder: (root: T) => T,
   options?: {
-    callbacks: {
-      get?: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
-      set?: (target: {}, prop: string | symbol, value: unknown, receiver: {}) => void;
-      deleteProperty?: (target: {}, prop: string | symbol) => void;
-    };
+    callbacks: ProxyCallbacks;
   }
 ) => {
   const skeleton = {} as T;

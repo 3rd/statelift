@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useRenderCount } from "../../hooks/useRenderCount";
 import { StoreTestA } from "./StoreTestA";
 import { StoreTestB } from "./StoreTestB";

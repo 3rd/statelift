@@ -1,4 +1,3 @@
-import React from "react";
 import { useProxyState } from "statelift";
 import { useRenderCount } from "../hooks/useRenderCount";
 

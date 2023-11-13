@@ -1,5 +1,5 @@
-import React from "react";
-import { useStore } from "../../../../lib/src/store";
+/* eslint-disable @typescript-eslint/no-magic-numbers */
+import { useStore } from "statelift";
 import { useRenderCount } from "../../hooks/useRenderCount";
 import { Store } from "./StoreTest";
 
