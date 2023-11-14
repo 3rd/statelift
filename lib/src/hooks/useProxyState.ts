@@ -7,7 +7,7 @@ export const useProxyState = <T extends {}>(target: T): T => {
 
   if (!state.current) {
     state.current = createDeepProxy(target, {
-      callbacks: { set: forceUpdate },
+      callbacks: { set: forceUpdate, deleteProperty: forceUpdate },
     });
   }
 

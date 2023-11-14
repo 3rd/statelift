@@ -5,6 +5,9 @@ import { isFunction } from "./utils";
 
 export type Store<T extends {}> = {
   state: T;
+};
+type StoreInternals<T extends {}> = Store<T> & {
+  currentConsumerId: ConsumerID | null;
   registerConsumer: (id: ConsumerID, callbacks: ConsumerCallbacks) => () => void;
 };
 export type Selector<T extends {}, R> = (state: T) => R;
@@ -25,7 +28,7 @@ type ConsumerTargetPropValueMap = WeakMap<
   Map<ConsumerTargetProp, WeakMap<ConsumerID, unknown>>
 >;
 
-let currentConsumerId: ConsumerID | null = null;
+const stateToStoreInternalsMap = new WeakMap<{}, StoreInternals<{}>>();
 
 export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): Store<T> => {
   const targetDependenciesMap: DependenciesMap = new WeakMap();
@@ -56,6 +59,7 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
       if (Object.is(oldValue, value)) continue;
 
       propValueMap.set(consumerId, value);
+      // console.log("notify set", { consumerId, target, prop, value });
       callbacks.revoke(target);
       callbacks.rerender();
     }
@@ -67,14 +71,18 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
     for (const consumerId of consumers) {
       const callbacks = consumerCallbacksMap.get(consumerId);
       if (!callbacks) throw new Error("Consumer callback not found");
+      // console.log("notify delete", { consumerId, target, prop });
+      callbacks.revoke(target);
       callbacks.rerender();
     }
   };
 
+  const internals = { currentConsumerId: null } as StoreInternals<T>;
+
   const state = createRootProxy(builder, {
     callbacks: {
       get: (target, prop, _receiver, value) => {
-        if (!currentConsumerId) return;
+        if (!internals.currentConsumerId) return;
 
         let targetDependencies = targetDependenciesMap.get(target);
         if (!targetDependencies) {
@@ -87,9 +95,11 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
           propConsumers = new Set();
           targetDependencies.set(prop, propConsumers);
         }
-        propConsumers.add(currentConsumerId);
+        propConsumers.add(internals.currentConsumerId);
 
-        const consumerDependencies = consumerDependenciesCleanupMap.get(currentConsumerId);
+        const consumerDependencies = consumerDependenciesCleanupMap.get(
+          internals.currentConsumerId
+        );
         if (!consumerDependencies) throw new Error("Consumer dependencies not found");
         consumerDependencies.add(propConsumers);
 
@@ -105,9 +115,7 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
           targetPropValueMap.set(prop, propValueMap);
         }
 
-        propValueMap.set(currentConsumerId, value);
-
-        // console.log("added dependency", currentConsumerId, target, prop);
+        propValueMap.set(internals.currentConsumerId, value);
       },
       set: (target, prop, value, _receiver) => {
         notifySet(target, prop, value);
@@ -138,7 +146,11 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
     };
   };
 
-  return { state, registerConsumer };
+  internals.state = state;
+  internals.registerConsumer = registerConsumer;
+  stateToStoreInternalsMap.set(state, internals);
+
+  return { state };
 };
 
 export const createStore = <T extends {}>(target: T) => {
@@ -146,7 +158,6 @@ export const createStore = <T extends {}>(target: T) => {
   const store = createStoreFromBuilder(builder as (root: T) => T);
   return {
     state: store.state as T extends (...args: any[]) => any ? ReturnType<T> : T,
-    registerConsumer: store.registerConsumer,
   };
 };
 
@@ -158,11 +169,14 @@ export const createConsumer = <T extends {}>(
   const consumerId = Symbol(`store-consumer:${consumerIdCounter++}`);
   const proxyCache = new WeakMap<{}, {}>();
 
+  const storeInternals = stateToStoreInternalsMap.get(store.state);
+  if (!storeInternals) throw new Error("Store internals not found");
+
   const revokeCachedProxy = (target: {}) => {
     proxyCache.delete(target);
   };
 
-  const unregisterConsumer = store.registerConsumer(consumerId, {
+  const unregisterConsumer = storeInternals.registerConsumer(consumerId, {
     rerender: callback,
     revoke: revokeCachedProxy,
   });
@@ -170,7 +184,7 @@ export const createConsumer = <T extends {}>(
   const handlers: ProxyHandler<{}> = {
     get(target, prop, receiver) {
       // console.log("@consumer get", consumerId, { target, prop, receiver });
-      currentConsumerId = consumerId;
+      storeInternals.currentConsumerId = consumerId;
 
       try {
         const result = Reflect.get(target, prop, receiver);
@@ -185,7 +199,7 @@ export const createConsumer = <T extends {}>(
         }
         return result;
       } finally {
-        currentConsumerId = null;
+        storeInternals.currentConsumerId = null;
       }
     },
   };

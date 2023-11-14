@@ -129,16 +129,6 @@ describe("createStore", () => {
 
     expect(store.state).toEqual(initialState);
   });
-
-  it("register a new consumer and returns a cleanup function", () => {
-    const store = createStore({});
-
-    const consumerId = Symbol("consumer");
-    const callback = vi.fn();
-    const cleanup = store.registerConsumer(consumerId, { rerender: callback, revoke: vi.fn() });
-
-    expect(cleanup).toEqual(expect.any(Function));
-  });
 });
 
 describe("createConsumer", () => {
