@@ -112,10 +112,7 @@ export function useStoreWithRenderCount<T extends {}, R>(
   store: Store<T>,
   selector: Selector<T, R>
 ): { count: number; state: R };
-export function useStoreWithRenderCount<T extends {}, R>(
-  store: Store<T>,
-  selector?: Selector<T, R>
-) {
+export function useStoreWithRenderCount<T extends {}, R>(store: Store<T>, selector?: Selector<T, R>) {
   const innerStore = useStore(store, selector!);
   const count = useRef(0);
   count.current++;
@@ -284,9 +281,12 @@ for (const { type, create } of storeDefinitions) {
         const { result } = renderHook(() => useStoreWithRenderCount(store));
         expect(result.current.count).toEqual(1);
 
+        const initialNestedObject = result.current.state.nested;
+
         // access store.nested.a
         expect(result.current.state.nested.a).toEqual(3);
         expect(result.current.count).toEqual(1);
+        expect(result.current.state.nested).toBe(initialNestedObject);
 
         // mutate store.nested.a
         act(() => {
@@ -294,6 +294,7 @@ for (const { type, create } of storeDefinitions) {
         });
         expect(result.current.state.nested.a).toEqual(100);
         expect(result.current.count).toEqual(2);
+        expect(result.current.state.nested).not.toBe(initialNestedObject);
       });
 
       it("does not rerender when data that was not accessed changes", () => {

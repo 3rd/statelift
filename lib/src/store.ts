@@ -113,9 +113,7 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
         }
         propConsumers.add(internals.currentConsumerId);
 
-        const consumerDependencies = consumerDependenciesCleanupMap.get(
-          internals.currentConsumerId
-        );
+        const consumerDependencies = consumerDependenciesCleanupMap.get(internals.currentConsumerId);
         if (!consumerDependencies) throw new Error("Consumer dependencies not found");
         consumerDependencies.add(propConsumers);
 
@@ -178,10 +176,7 @@ export const createStore = <T extends {}>(target: T) => {
 };
 
 let consumerIdCounter = 0;
-export const createConsumer = <T extends {}>(
-  store: Store<T>,
-  callback: () => void
-): Consumer<T> => {
+export const createConsumer = <T extends {}>(store: Store<T>, callback: () => void): Consumer<T> => {
   const consumerId = Symbol(`store-consumer:${consumerIdCounter++}`);
   const proxyCache = new WeakMap<{}, {}>();
 
@@ -240,6 +235,9 @@ const createMemoizedConsumer = <T extends {}, R>(
       if (Object.is(newValue, valueRef.current)) return;
       // eslint-disable-next-line no-param-reassign
       valueRef.current = newValue;
+    } else {
+      // eslint-disable-next-line no-param-reassign
+      valueRef.current = new Proxy(consumer.proxy, {}) as unknown as R;
     }
     // eslint-disable-next-line no-param-reassign
     updateRef.current = {};
@@ -286,5 +284,5 @@ export function useStore<T extends {}, R>(store: Store<T>, selector?: Selector<T
     return valueRef.current;
   }
 
-  return memoizedConsumer.proxy as T;
+  return valueRef.current === initRefValue ? memoizedConsumer.proxy : valueRef.current;
 }
