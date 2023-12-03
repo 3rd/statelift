@@ -20,7 +20,7 @@ type ConsumerID = symbol;
 type ConsumerTarget = {};
 type ConsumerTargetProp = string | symbol;
 type DependenciesMap = WeakMap<ConsumerTarget, Map<ConsumerTargetProp, Set<ConsumerID>>>;
-type ConsumerCallbacks = { rerender: () => void; revoke: (target: {}) => void };
+type ConsumerCallbacks = { rerender: () => void; revoke: (target: ConsumerTarget) => void };
 type ConsumerCallbacksMap = WeakMap<ConsumerID, ConsumerCallbacks>;
 type ConsumerDependenciesCleanupMap = WeakMap<ConsumerID, Set<Set<ConsumerID>>>;
 type ConsumerTargetPropValueMap = WeakMap<
@@ -42,12 +42,23 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
     return targetDependencies.get(prop) ?? [];
   };
 
-  const notifySet = (target: ConsumerTarget, prop: ConsumerTargetProp, value: unknown) => {
+  const notifyConsumers = (
+    target: ConsumerTarget,
+    prop: ConsumerTargetProp,
+    handler: (consumerId: ConsumerID, callbacks: ConsumerCallbacks) => void
+  ) => {
     const consumers = getAffectedConsumers(target, prop);
 
     for (const consumerId of consumers) {
       const callbacks = consumerCallbacksMap.get(consumerId);
       if (!callbacks) throw new Error("Consumer callback not found");
+      handler(consumerId, callbacks);
+    }
+  };
+
+  const notifySet = (target: ConsumerTarget, prop: ConsumerTargetProp, value: unknown) => {
+    notifyConsumers(target, prop, (consumerId, callbacks) => {
+      // console.log("notify set", { consumerId, target, prop, value });
 
       const targetPropValueMap = consumerTargetPropValueMap.get(target);
       if (!targetPropValueMap) throw new Error("Target prop value map not found");
@@ -56,25 +67,30 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
       if (!propValueMap) throw new Error("Prop value map not found");
 
       const oldValue = propValueMap.get(consumerId);
-      if (Object.is(oldValue, value)) continue;
+      if (Object.is(oldValue, value)) return;
 
       propValueMap.set(consumerId, value);
-      // console.log("notify set", { consumerId, target, prop, value });
+
       callbacks.revoke(target);
       callbacks.rerender();
-    }
+    });
   };
 
   const notifyDelete = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
-    const consumers = getAffectedConsumers(target, prop);
-
-    for (const consumerId of consumers) {
-      const callbacks = consumerCallbacksMap.get(consumerId);
-      if (!callbacks) throw new Error("Consumer callback not found");
+    notifyConsumers(target, prop, (consumerId, callbacks) => {
       // console.log("notify delete", { consumerId, target, prop });
+
+      const targetPropValueMap = consumerTargetPropValueMap.get(target);
+      if (!targetPropValueMap) throw new Error("Target prop value map not found");
+
+      const propValueMap = targetPropValueMap.get(prop);
+      if (!propValueMap) throw new Error("Prop value map not found");
+
+      propValueMap.delete(consumerId);
+
       callbacks.revoke(target);
       callbacks.rerender();
-    }
+    });
   };
 
   const internals = { currentConsumerId: null } as StoreInternals<T>;
@@ -128,7 +144,7 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
 
   const registerConsumer = (
     id: ConsumerID,
-    callbacks: { rerender: () => void; revoke: (target: {}) => void }
+    callbacks: { rerender: () => void; revoke: (target: ConsumerTarget) => void }
   ) => {
     consumerCallbacksMap.set(id, callbacks);
     consumerDependenciesCleanupMap.set(id, new Set());
@@ -172,9 +188,7 @@ export const createConsumer = <T extends {}>(
   const storeInternals = stateToStoreInternalsMap.get(store.state);
   if (!storeInternals) throw new Error("Store internals not found");
 
-  const revokeCachedProxy = (target: {}) => {
-    proxyCache.delete(target);
-  };
+  const revokeCachedProxy = (target: {}) => proxyCache.delete(target);
 
   const unregisterConsumer = storeInternals.registerConsumer(consumerId, {
     rerender: callback,
@@ -190,9 +204,7 @@ export const createConsumer = <T extends {}>(
         const result = Reflect.get(target, prop, receiver);
         if (typeof result === "object" && result !== null && !(result instanceof Function)) {
           const unwrappedResult = unwrapProxy(result);
-          if (proxyCache.has(unwrappedResult)) {
-            return proxyCache.get(unwrappedResult);
-          }
+          if (proxyCache.has(unwrappedResult)) return proxyCache.get(unwrappedResult);
           const proxy = new Proxy(result, handlers);
           proxyCache.set(unwrappedResult, proxy);
           return proxy;
@@ -210,10 +222,44 @@ export const createConsumer = <T extends {}>(
     revoke();
   };
 
-  return {
-    proxy: proxy as T,
-    destroy,
+  return { proxy: proxy as T, destroy };
+};
+
+const createMemoizedConsumer = <T extends {}, R>(
+  store: Store<T>,
+  selectorRef: React.MutableRefObject<Selector<T, R> | undefined>,
+  valueRef: React.MutableRefObject<R>,
+  updateRef: React.MutableRefObject<{}>
+) => {
+  let referenceCount = 0;
+  let callbackRef = () => {};
+
+  const consumer = createConsumer(store, () => {
+    if (selectorRef.current) {
+      const newValue = selectorRef.current(consumer.proxy as T);
+      if (Object.is(newValue, valueRef.current)) return;
+      // eslint-disable-next-line no-param-reassign
+      valueRef.current = newValue;
+    }
+    // eslint-disable-next-line no-param-reassign
+    updateRef.current = {};
+    callbackRef();
+  });
+
+  const subscribe = (callback: () => void) => {
+    callbackRef = callback;
+    referenceCount++;
+
+    return () => {
+      referenceCount--;
+
+      setTimeout(() => {
+        if (referenceCount === 0) consumer.destroy();
+      }, 0);
+    };
   };
+
+  return { subscribe, proxy: consumer.proxy };
 };
 
 const initRefValue = {};
@@ -222,41 +268,13 @@ export function useStore<T extends {}>(store: Store<T>): T;
 export function useStore<T extends {}, R>(store: Store<T>, selector: Selector<T, R>): R;
 export function useStore<T extends {}, R>(store: Store<T>, selector?: Selector<T, R>) {
   const updateRef = useRef({});
-  const valueRef = useRef<R | typeof initRefValue>(initRefValue as unknown as R);
+  const valueRef = useRef<R>(initRefValue as unknown as R);
   const selectorRef = useRef(selector);
 
   selectorRef.current = selector;
 
   const memoizedConsumer = useMemo(() => {
-    let referenceCount = 0;
-    let callbackRef = () => {};
-
-    const consumer = createConsumer(store, () => {
-      if (selectorRef.current) {
-        const newValue = selectorRef.current(consumer.proxy as T);
-        if (Object.is(newValue, valueRef.current)) return;
-        valueRef.current = newValue;
-      }
-      updateRef.current = {};
-      callbackRef();
-    });
-
-    const subscribe = (callback: () => void) => {
-      callbackRef = callback;
-      referenceCount++;
-
-      return () => {
-        referenceCount--;
-
-        setTimeout(() => {
-          if (referenceCount === 0) {
-            consumer.destroy();
-          }
-        }, 0);
-      };
-    };
-
-    return { subscribe, proxy: consumer.proxy };
+    return createMemoizedConsumer<T, R>(store, selectorRef, valueRef, updateRef);
   }, [store]);
 
   useSyncExternalStore(memoizedConsumer.subscribe, () => updateRef.current);
