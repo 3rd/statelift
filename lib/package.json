@@ -1,6 +1,6 @@
 {
   "name": "statelift",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Simple state management for React",
   "type": "module",
   "module": "dist/index.js",
