@@ -21,19 +21,16 @@ type ConsumerTarget = {};
 type ConsumerTargetProp = string | symbol;
 type DependenciesMap = WeakMap<ConsumerTarget, Map<ConsumerTargetProp, Set<ConsumerID>>>;
 type ConsumerCallbacks = { rerender: () => void; revoke: (target: ConsumerTarget) => void };
-type ConsumerCallbacksMap = WeakMap<ConsumerID, ConsumerCallbacks>;
-type ConsumerDependenciesCleanupMap = WeakMap<ConsumerID, Set<Set<ConsumerID>>>;
-type ConsumerTargetPropValueMap = WeakMap<
-  ConsumerTarget,
-  Map<ConsumerTargetProp, WeakMap<ConsumerID, unknown>>
->;
+type ConsumerCallbacksMap = Map<ConsumerID, ConsumerCallbacks>;
+type ConsumerDependenciesCleanupMap = Map<ConsumerID, Set<Set<ConsumerID>>>;
+type ConsumerTargetPropValueMap = WeakMap<ConsumerTarget, Map<ConsumerTargetProp, Map<ConsumerID, unknown>>>;
 
 const stateToStoreInternalsMap = new WeakMap<{}, StoreInternals<{}>>();
 
 export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): Store<T> => {
   const targetDependenciesMap: DependenciesMap = new WeakMap();
-  const consumerCallbacksMap: ConsumerCallbacksMap = new WeakMap();
-  const consumerDependenciesCleanupMap: ConsumerDependenciesCleanupMap = new WeakMap();
+  const consumerCallbacksMap: ConsumerCallbacksMap = new Map();
+  const consumerDependenciesCleanupMap: ConsumerDependenciesCleanupMap = new Map();
   const consumerTargetPropValueMap: ConsumerTargetPropValueMap = new WeakMap();
 
   const getAffectedConsumers = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
@@ -125,7 +122,7 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
 
         let propValueMap = targetPropValueMap.get(prop);
         if (!propValueMap) {
-          propValueMap = new WeakMap();
+          propValueMap = new Map();
           targetPropValueMap.set(prop, propValueMap);
         }
 
