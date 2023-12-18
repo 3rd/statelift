@@ -7,10 +7,23 @@ export type ProxyCallbacks = {
   deleteProperty: (target: {}, prop: string | symbol) => void;
 };
 
+export const unwrapProxy = <T extends {}>(object: T, deep = false): T => {
+  if (typeof object !== "object" || object === null || object instanceof Function) return object;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let unwrapped = (object as unknown as { [UNWRAP_PROXY_KEY]: T })[UNWRAP_PROXY_KEY] as any;
+  if (deep) {
+    while (unwrapped && unwrapped[UNWRAP_PROXY_KEY]) {
+      unwrapped = unwrapped[UNWRAP_PROXY_KEY];
+    }
+  }
+  return unwrapped ?? object;
+};
+
 export const createDeepProxy = <T extends object>(
   object: T,
   options?: {
-    callbacks: Partial<ProxyCallbacks>;
+    callbacks?: Partial<ProxyCallbacks>;
+    unwrapSet?: boolean;
   }
 ) => {
   const proxyCache = new WeakMap<{}, {}>();
@@ -34,8 +47,9 @@ export const createDeepProxy = <T extends object>(
       return result;
     },
     set(target, prop, value, receiver) {
-      const result = Reflect.set(target, prop, value, receiver);
-      options?.callbacks?.set?.(target, prop, value, receiver);
+      const unwrappedValue = options?.unwrapSet ? unwrapProxy(value, true) : value;
+      const result = Reflect.set(target, prop, unwrappedValue, receiver);
+      options?.callbacks?.set?.(target, prop, unwrappedValue, receiver);
       return result;
     },
     deleteProperty(target, prop) {
@@ -55,15 +69,14 @@ export const createRootProxy = <T extends {}>(
   }
 ) => {
   const skeleton = {} as T;
-  const root = createDeepProxy(skeleton, options);
+  const root = createDeepProxy(skeleton, {
+    callbacks: options?.callbacks,
+    unwrapSet: true,
+  });
 
   const builderResult = builder(root);
   const descriptors = Object.getOwnPropertyDescriptors(builderResult);
   Object.defineProperties(skeleton, descriptors);
 
   return root;
-};
-
-export const unwrapProxy = <T extends {}>(object: T): T => {
-  return (object as unknown as { [UNWRAP_PROXY_KEY]: T })[UNWRAP_PROXY_KEY];
 };

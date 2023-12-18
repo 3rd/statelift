@@ -173,7 +173,7 @@ export const createStore = <T extends {}>(target: T) => {
 };
 
 let consumerIdCounter = 0;
-export const createConsumer = <T extends {}>(store: Store<T>, callback: () => void): Consumer<T> => {
+export const createConsumer = <T extends {}>(store: Store<T>, onRerender: () => void): Consumer<T> => {
   const consumerId = Symbol(`store-consumer:${consumerIdCounter++}`);
   const proxyCache = new WeakMap<{}, {}>();
 
@@ -183,7 +183,7 @@ export const createConsumer = <T extends {}>(store: Store<T>, callback: () => vo
   const revokeCachedProxy = (target: {}) => proxyCache.delete(target);
 
   const unregisterConsumer = storeInternals.registerConsumer(consumerId, {
-    rerender: callback,
+    rerender: onRerender,
     revoke: revokeCachedProxy,
   });
 
@@ -241,7 +241,7 @@ const createMemoizedConsumer = <T extends {}, R>(
     callbackRef();
   });
 
-  const subscribe = (callback: () => void) => {
+  const onStoreChange = (callback: () => void) => {
     callbackRef = callback;
     referenceCount++;
 
@@ -254,7 +254,7 @@ const createMemoizedConsumer = <T extends {}, R>(
     };
   };
 
-  return { subscribe, proxy: consumer.proxy };
+  return { onStoreChange, proxy: consumer.proxy };
 };
 
 const initRefValue = {};
@@ -272,7 +272,7 @@ export function useStore<T extends {}, R>(store: Store<T>, selector?: Selector<T
     return createMemoizedConsumer<T, R>(store, selectorRef, valueRef, updateRef);
   }, [store]);
 
-  useSyncExternalStore(memoizedConsumer.subscribe, () => updateRef.current);
+  useSyncExternalStore(memoizedConsumer.onStoreChange, () => updateRef.current);
 
   if (selectorRef.current) {
     if (valueRef.current === initRefValue) {
