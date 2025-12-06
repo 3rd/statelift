@@ -3,6 +3,24 @@ const UNWRAP_PROXY_KEY = Symbol("unwrapped-target");
 
 const BUILT_IN_OBJECTS = [Map, Set, WeakMap, WeakSet, Date, RegExp, ArrayBuffer, Promise] as const;
 
+export const WELL_KNOWN_SYMBOLS = new Set(
+  Object.getOwnPropertyNames(Symbol)
+    .map((key) => Symbol[key as keyof SymbolConstructor])
+    .filter((value): value is symbol => typeof value === "symbol"),
+);
+
+const COMPOUND_ARRAY_METHODS = new Set([
+  "splice",
+  "push",
+  "pop",
+  "shift",
+  "unshift",
+  "reverse",
+  "sort",
+  "fill",
+  "copyWithin",
+]);
+
 export const hasInternalSlots = (value: unknown): boolean => {
   if (ArrayBuffer.isView(value)) return true;
   return BUILT_IN_OBJECTS.some((ctor) => value instanceof ctor);
@@ -20,6 +38,8 @@ export type ProxyCallbacks = {
   ) => void;
   deleteProperty: (target: {}, prop: string | symbol) => void;
   ownKeys: (target: {}) => void;
+  // called after a compound array operation completes (splice, reverse, sort, etc.)
+  arrayMethodComplete?: (target: unknown[], method: string) => void;
 };
 
 export const unwrapProxy = <T extends {}>(object: T, deep = false): T => {
@@ -44,13 +64,43 @@ export const createDeepProxy = <T extends object>(
 ) => {
   const proxyCache = new WeakMap<{}, {}>();
   let inSetTrap = false;
+  // batch compound array operations -> single notification
+  let compoundMethodLock = false;
 
   const handler: ProxyHandler<{}> = {
     get(target, prop, receiver) {
       if (prop === UNWRAP_PROXY_KEY) return target;
 
+      // skip tracking for well-known symbols
+      if (typeof prop === "symbol" && WELL_KNOWN_SYMBOLS.has(prop)) {
+        return Reflect.get(target, prop, receiver);
+      }
+
       const value = Reflect.get(target, prop, receiver);
       let result = value;
+
+      // wrap compound array methods
+      if (
+        Array.isArray(target) &&
+        typeof prop === "string" &&
+        COMPOUND_ARRAY_METHODS.has(prop) &&
+        typeof value === "function"
+      ) {
+        const methodName = prop;
+        result = function (this: unknown[], ...args: unknown[]) {
+          compoundMethodLock = true;
+          try {
+            const returnValue = value.apply(this, args);
+            return returnValue;
+          } finally {
+            compoundMethodLock = false;
+            options?.callbacks?.arrayMethodComplete?.(target as unknown[], methodName);
+          }
+        };
+        options?.callbacks?.get?.(target, prop, receiver, result);
+        return result;
+      }
+
       if (typeof value === "object" && value !== null && !(value instanceof Function)) {
         if (hasInternalSlots(value)) {
           if (options?.strict) {
@@ -82,9 +132,19 @@ export const createDeepProxy = <T extends object>(
       inSetTrap = true;
       const result = Reflect.set(target, prop, unwrappedValue, receiver);
       inSetTrap = false;
-      options?.callbacks?.set?.(target, prop, unwrappedValue, receiver, isNewProperty, oldArrayLength);
-      if (isArrayLengthTruncation) {
-        options?.callbacks?.ownKeys?.(target);
+
+      // prevents duplicate notifications from inheritance
+      const unwrappedReceiver = unwrapProxy(receiver as {}, true);
+      if (target !== unwrappedReceiver) {
+        return result;
+      }
+
+      // skip notifications for compound ops
+      if (!compoundMethodLock) {
+        options?.callbacks?.set?.(target, prop, unwrappedValue, receiver, isNewProperty, oldArrayLength);
+        if (isArrayLengthTruncation) {
+          options?.callbacks?.ownKeys?.(target);
+        }
       }
       return result;
     },

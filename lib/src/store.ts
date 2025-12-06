@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useSyncExternalStore } from "react";
-import { createRootProxy, hasInternalSlots, unwrapProxy } from "./proxy";
+import { createRootProxy, hasInternalSlots, unwrapProxy, WELL_KNOWN_SYMBOLS } from "./proxy";
 import { isFunction } from "./utils";
 
 export type Store<T extends {}> = {
@@ -9,6 +9,8 @@ export type Store<T extends {}> = {
 type StoreInternals<T extends {}> = Store<T> & {
   currentConsumerId: ConsumerID | null;
   registerConsumer: (id: ConsumerID, callbacks: ConsumerCallbacks) => () => void;
+  startBatch: () => void;
+  endBatch: () => void;
 };
 export type Selector<T extends {}, R> = (state: T) => R;
 
@@ -47,6 +49,46 @@ export const createStoreFromBuilder = <T extends {}>(
   const consumerDependenciesCleanupMap: ConsumerDependenciesCleanupMap = new Map();
   const consumerTargetPropValueMap: ConsumerTargetPropValueMap = new WeakMap();
 
+  // batch nested notifications + batch() support
+  const rerenderQueue: ConsumerID[] = [];
+  const rerenderQueueSet = new Set<ConsumerID>();
+  let batchingDepth = 0;
+
+  const flushQueue = () => {
+    let i = 0;
+    while (i < rerenderQueue.length) {
+      const id = rerenderQueue[i];
+      const callbacks = consumerCallbacksMap.get(id);
+      callbacks?.rerender();
+      i++;
+    }
+    rerenderQueue.length = 0;
+    rerenderQueueSet.clear();
+  };
+
+  const scheduleRerender = (consumerId: ConsumerID) => {
+    if (!rerenderQueueSet.has(consumerId)) {
+      const shouldProcess = rerenderQueue.length === 0;
+      rerenderQueue.push(consumerId);
+      rerenderQueueSet.add(consumerId);
+
+      if (shouldProcess && batchingDepth === 0) {
+        flushQueue();
+      }
+    }
+  };
+
+  const startBatch = () => {
+    batchingDepth++;
+  };
+
+  const endBatch = () => {
+    batchingDepth--;
+    if (batchingDepth === 0 && rerenderQueue.length > 0) {
+      flushQueue();
+    }
+  };
+
   const getAffectedConsumers = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
     const targetDependencies = targetDependenciesMap.get(target);
     if (!targetDependencies) return [];
@@ -73,14 +115,12 @@ export const createStoreFromBuilder = <T extends {}>(
       const callbacks = consumerCallbacksMap.get(consumerId);
       if (!callbacks) continue;
       callbacks.revoke(target);
-      callbacks.rerender();
+      scheduleRerender(consumerId);
     }
   };
 
   const notifyDelete = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
     notifyConsumers(target, prop, (consumerId, callbacks) => {
-      // console.log("notify delete", { consumerId, target, prop });
-
       const targetPropValueMap = consumerTargetPropValueMap.get(target);
       if (!targetPropValueMap) throw new Error("Target prop value map not found");
 
@@ -90,7 +130,7 @@ export const createStoreFromBuilder = <T extends {}>(
       propValueMap.delete(consumerId);
 
       callbacks.revoke(target);
-      callbacks.rerender();
+      scheduleRerender(consumerId);
     });
 
     // property deleted, notify consumers that depend on ownKeys
@@ -104,8 +144,6 @@ export const createStoreFromBuilder = <T extends {}>(
     isNewProperty: boolean,
   ) => {
     notifyConsumers(target, prop, (consumerId, callbacks) => {
-      // console.log("notify set", { consumerId, target, prop, value });
-
       const targetPropValueMap = consumerTargetPropValueMap.get(target);
       if (!targetPropValueMap) throw new Error("Target prop value map not found");
 
@@ -118,7 +156,7 @@ export const createStoreFromBuilder = <T extends {}>(
       propValueMap.set(consumerId, value);
 
       callbacks.revoke(target);
-      callbacks.rerender();
+      scheduleRerender(consumerId);
     });
 
     // new property, notify consumers that depend on ownKeys
@@ -194,6 +232,24 @@ export const createStoreFromBuilder = <T extends {}>(
         if (!consumerDependencies) throw new Error("Consumer dependencies not found");
         consumerDependencies.add(ownKeysConsumers);
       },
+      arrayMethodComplete: (target) => {
+        const targetDependencies = targetDependenciesMap.get(target);
+        if (!targetDependencies) return;
+
+        // use explicit batching
+        startBatch();
+        try {
+          for (const [_prop, consumers] of targetDependencies) {
+            for (const consumerId of consumers) {
+              const callbacks = consumerCallbacksMap.get(consumerId);
+              if (callbacks) callbacks.revoke(target);
+              scheduleRerender(consumerId);
+            }
+          }
+        } finally {
+          endBatch();
+        }
+      },
     },
     strict: options?.strict,
   });
@@ -220,6 +276,8 @@ export const createStoreFromBuilder = <T extends {}>(
 
   internals.state = state;
   internals.registerConsumer = registerConsumer;
+  internals.startBatch = startBatch;
+  internals.endBatch = endBatch;
   stateToStoreInternalsMap.set(state, internals);
 
   return { state };
@@ -257,7 +315,11 @@ export const createConsumer = <T extends {}>(store: Store<T>, onRerender: () => 
 
   const handlers: ProxyHandler<{}> = {
     get(target, prop, receiver) {
-      // console.log("@consumer get", consumerId, { target, prop, receiver });
+      // skip well-known symbols
+      if (typeof prop === "symbol" && WELL_KNOWN_SYMBOLS.has(prop)) {
+        return Reflect.get(target, prop, receiver);
+      }
+
       storeInternals.currentConsumerId = consumerId;
 
       try {
@@ -334,10 +396,9 @@ const createMemoizedConsumer = <T extends {}, R>(
 
     return () => {
       referenceCount--;
-
-      setTimeout(() => {
+      queueMicrotask(() => {
         if (referenceCount === 0) consumer.destroy();
-      }, 0);
+      });
     };
   };
 
@@ -370,3 +431,25 @@ export function useStore<T extends {}, R>(store: Store<T>, selector?: Selector<T
 
   return valueRef.current === initRefValue ? memoizedConsumer.proxy : valueRef.current;
 }
+
+/**
+ * Batches multiple state updates into a single rerender.
+ * Without batching, each state update triggers a separate rerender.
+ * @example
+ * batch(store, () => {
+ *   store.state.a = 1;
+ *   store.state.b = 2;
+ *   store.state.c = 3;
+ * });
+ */
+export const batch = <T extends {}, R>(store: Store<T>, fn: () => R): R => {
+  const internals = stateToStoreInternalsMap.get(store.state);
+  if (!internals) throw new Error("Store internals not found");
+
+  internals.startBatch();
+  try {
+    return fn();
+  } finally {
+    internals.endBatch();
+  }
+};
