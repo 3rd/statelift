@@ -683,3 +683,102 @@ describe("array length truncation notifications", () => {
     expect(result.current.count).toEqual(2);
   });
 });
+
+describe("'in' operator dependency tracking", () => {
+  it("rerenders when using 'in' operator and property is added", () => {
+    const store = createStore<{ data: Record<string, number> }>({ data: { a: 1 } });
+
+    const { result } = renderHook(() =>
+      useStoreWithRenderCount(store, (state) => "b" in state.data)
+    );
+
+    expect(result.current.state).toEqual(false);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.data.b = 2;
+    });
+
+    expect(result.current.state).toEqual(true);
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("rerenders when using 'in' operator and property is deleted", () => {
+    const store = createStore<{ data: Record<string, number | undefined> }>({ data: { a: 1, b: 2 } });
+
+    const { result } = renderHook(() =>
+      useStoreWithRenderCount(store, (state) => "b" in state.data)
+    );
+
+    expect(result.current.state).toEqual(true);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      delete store.state.data.b;
+    });
+
+    expect(result.current.state).toEqual(false);
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("does not rerender when unrelated property changes", () => {
+    const store = createStore<{ data: Record<string, number> }>({ data: { a: 1, b: 2 } });
+
+    const { result } = renderHook(() =>
+      useStoreWithRenderCount(store, (state) => "a" in state.data)
+    );
+
+    expect(result.current.state).toEqual(true);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.data.b = 999;
+    });
+
+    expect(result.current.count).toEqual(1);
+  });
+});
+
+describe("strict mode", () => {
+  it("throws when accessing built-in objects in strict mode", () => {
+    const store = createStore({ date: new Date() }, { strict: true });
+
+    expect(() => store.state.date).toThrow(/Built-in object "Date" detected/);
+  });
+
+  it("throws for Map in strict mode", () => {
+    const store = createStore({ map: new Map() }, { strict: true });
+
+    expect(() => store.state.map).toThrow(/Built-in object "Map" detected/);
+  });
+
+  it("does not throw without strict mode", () => {
+    const store = createStore({
+      date: new Date(),
+      map: new Map(),
+      set: new Set(),
+    });
+
+    expect(() => store.state.date.getTime()).not.toThrow();
+    expect(() => store.state.map.get("test")).not.toThrow();
+    expect(() => store.state.set.has(1)).not.toThrow();
+  });
+
+  it("built-in object replacement still triggers rerenders", () => {
+    const store = createStore<{ date: Date }>({ date: new Date("2024-01-01") });
+
+    const { result } = renderHook(() =>
+      useStoreWithRenderCount(store, (state) => state.date)
+    );
+
+    expect(result.current.count).toEqual(1);
+    const oldDate = result.current.state;
+
+    act(() => {
+      store.state.date = new Date("2024-12-31");
+    });
+
+    expect(result.current.count).toEqual(2);
+    expect(result.current.state).not.toBe(oldDate);
+  });
+});

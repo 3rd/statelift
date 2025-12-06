@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useSyncExternalStore } from "react";
-import { createRootProxy, unwrapProxy } from "./proxy";
+import { createRootProxy, hasInternalSlots, unwrapProxy } from "./proxy";
 import { isFunction } from "./utils";
 
 export type Store<T extends {}> = {
@@ -29,7 +29,19 @@ const stateToStoreInternalsMap = new WeakMap<{}, StoreInternals<{}>>();
 
 const OWNKEYS_DEPENDENCY = Symbol("ownKeys");
 
-export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): Store<T> => {
+export type StoreOptions = {
+  /**
+   * If true, throws when built-in objects (Map, Set, Date, RegExp, etc.) are detected in state.
+   * Built-in objects are not reactive due to JavaScript proxy limitations.
+   * Default: false (built-ins work but aren't tracked).
+   */
+  strict?: boolean;
+};
+
+export const createStoreFromBuilder = <T extends {}>(
+  builder: (root: T) => T,
+  options?: StoreOptions,
+): Store<T> => {
   const targetDependenciesMap: DependenciesMap = new WeakMap();
   const consumerCallbacksMap: ConsumerCallbacksMap = new Map();
   const consumerDependenciesCleanupMap: ConsumerDependenciesCleanupMap = new Map();
@@ -183,6 +195,7 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
         consumerDependencies.add(ownKeysConsumers);
       },
     },
+    strict: options?.strict,
   });
 
   const registerConsumer = (
@@ -212,9 +225,16 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
   return { state };
 };
 
-export const createStore = <T extends {}>(target: T) => {
+/**
+ * Creates a reactive store.
+ * @param target - Initial state object or builder function
+ * @param options.strict - If true, throws when built-in objects (Map, Set, Date, etc.)
+ *   are detected in state. Built-in objects are not reactive due to JavaScript
+ *   proxy limitations. Default: false (built-ins work but aren't tracked).
+ */
+export const createStore = <T extends {}>(target: T, options?: StoreOptions) => {
   const builder = isFunction(target) ? target : () => target;
-  const store = createStoreFromBuilder(builder as (root: T) => T);
+  const store = createStoreFromBuilder(builder as (root: T) => T, options);
   return {
     state: store.state as T extends (...args: any[]) => any ? ReturnType<T> : T,
   };
@@ -243,6 +263,9 @@ export const createConsumer = <T extends {}>(store: Store<T>, onRerender: () => 
       try {
         const result = Reflect.get(target, prop, receiver);
         if (typeof result === "object" && result !== null && !(result instanceof Function)) {
+          if (hasInternalSlots(result)) {
+            return result;
+          }
           const unwrappedResult = unwrapProxy(result);
           if (proxyCache.has(unwrappedResult)) return proxyCache.get(unwrappedResult);
           const proxy = new Proxy(result, handlers);
@@ -258,6 +281,14 @@ export const createConsumer = <T extends {}>(store: Store<T>, onRerender: () => 
       storeInternals.currentConsumerId = consumerId;
       try {
         return Reflect.ownKeys(target);
+      } finally {
+        storeInternals.currentConsumerId = null;
+      }
+    },
+    has(target, prop) {
+      storeInternals.currentConsumerId = consumerId;
+      try {
+        return Reflect.has(target, prop);
       } finally {
         storeInternals.currentConsumerId = null;
       }

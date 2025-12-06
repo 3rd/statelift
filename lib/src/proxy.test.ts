@@ -262,3 +262,113 @@ describe("createRootProxy", () => {
     expect(proxy.very.nested.value).toBe(11);
   });
 });
+
+describe("has trap", () => {
+  it("calls get callback when 'in' operator is used", () => {
+    const target = { foo: "bar", nested: { a: 1 } };
+    const callbacks: Partial<ProxyCallbacks> = { get: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    const hasFoo = "foo" in proxy;
+    expect(hasFoo).toBe(true);
+    expect(callbacks.get).toHaveBeenCalledWith(target, "foo", target, true);
+
+    const hasMissing = "missing" in proxy;
+    expect(hasMissing).toBe(false);
+    expect(callbacks.get).toHaveBeenCalledWith(target, "missing", target, false);
+  });
+
+  it("tracks 'in' operator on nested objects", () => {
+    const target = { nested: { exists: true } };
+    const callbacks: Partial<ProxyCallbacks> = { get: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    const hasExists = "exists" in proxy.nested;
+    expect(hasExists).toBe(true);
+    expect(callbacks.get).toHaveBeenCalledWith(target.nested, "exists", target.nested, true);
+  });
+});
+
+describe("defineProperty trap", () => {
+  it("calls set callback when Object.defineProperty is used", () => {
+    const target: { foo: string; defined?: string } = { foo: "bar" };
+    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    Object.defineProperty(proxy, "defined", {
+      value: "via defineProperty",
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+
+    expect(callbacks.set).toHaveBeenCalledWith(target, "defined", "via defineProperty", target, true, undefined);
+    expect(target.defined).toBe("via defineProperty");
+  });
+
+  it("passes isNewProperty=false when redefining existing property", () => {
+    const target = { existing: "old" };
+    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    Object.defineProperty(proxy, "existing", {
+      value: "new",
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+
+    expect(callbacks.set).toHaveBeenCalledWith(target, "existing", "new", target, false, undefined);
+  });
+});
+
+describe("built-in objects handling", () => {
+  it("does not proxy built-in objects (Map, Set, Date, etc.)", () => {
+    const target = {
+      date: new Date("2024-01-01"),
+      map: new Map([["a", 1]]),
+      set: new Set([1, 2, 3]),
+      regex: /test/gi,
+    };
+
+    const proxy = createDeepProxy(target);
+
+    expect(() => proxy.date.getTime()).not.toThrow();
+    expect(() => proxy.map.get("a")).not.toThrow();
+    expect(() => proxy.set.has(1)).not.toThrow();
+    expect(() => proxy.regex.test("test")).not.toThrow();
+  });
+
+  it("throws in strict mode when built-in objects are accessed", () => {
+    const target = { date: new Date() };
+    const proxy = createDeepProxy(target, { strict: true });
+
+    expect(() => proxy.date).toThrow(/Built-in object "Date" detected/);
+  });
+
+  it("throws in strict mode for Map", () => {
+    const target = { map: new Map() };
+    const proxy = createDeepProxy(target, { strict: true });
+
+    expect(() => proxy.map).toThrow(/Built-in object "Map" detected/);
+  });
+
+  it("throws in strict mode for Set", () => {
+    const target = { set: new Set() };
+    const proxy = createDeepProxy(target, { strict: true });
+
+    expect(() => proxy.set).toThrow(/Built-in object "Set" detected/);
+  });
+
+  it("does not throw in strict mode for plain objects and arrays", () => {
+    const target = { obj: { a: 1 }, arr: [1, 2, 3] };
+    const proxy = createDeepProxy(target, { strict: true });
+
+    expect(() => proxy.obj.a).not.toThrow();
+    expect(() => proxy.arr[0]).not.toThrow();
+  });
+});
