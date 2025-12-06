@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-magic-numbers */
 /* eslint-disable no-param-reassign */
 import { vi } from "vitest";
-import { ProxyCallbacks, createDeepProxy, createRootProxy } from "./proxy";
+import { createDeepProxy, createRootProxy, ProxyCallbacks } from "./proxy";
 
 describe("createDeepProxy", () => {
   it("creates a deep proxy for the target object", () => {
@@ -39,7 +39,7 @@ describe("createDeepProxy", () => {
     // set 1 time: foo -> primitive
     proxy.foo = "new boo";
     expect(callbacks.set).toHaveBeenCalledTimes(1);
-    expect(callbacks.set).toHaveBeenNthCalledWith(1, target, "foo", "new boo", expect.anything());
+    expect(callbacks.set).toHaveBeenNthCalledWith(1, target, "foo", "new boo", expect.anything(), false);
     expect(target.foo).toBe("new boo");
 
     // set 1 time: bar -> object
@@ -50,7 +50,8 @@ describe("createDeepProxy", () => {
       target,
       "bar",
       { baz: "new zoo" },
-      expect.anything()
+      expect.anything(),
+      false,
     );
     expect(target.bar).toEqual({ baz: "new zoo" });
   });

@@ -3,8 +3,9 @@ const UNWRAP_PROXY_KEY = Symbol("unwrapped-target");
 
 export type ProxyCallbacks = {
   get: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
-  set: (target: {}, prop: string | symbol, value: unknown, receiver: {}) => void;
+  set: (target: {}, prop: string | symbol, value: unknown, receiver: {}, isNewProperty: boolean) => void;
   deleteProperty: (target: {}, prop: string | symbol) => void;
+  ownKeys: (target: {}) => void;
 };
 
 export const unwrapProxy = <T extends {}>(object: T, deep = false): T => {
@@ -24,7 +25,7 @@ export const createDeepProxy = <T extends object>(
   options?: {
     callbacks?: Partial<ProxyCallbacks>;
     unwrapSet?: boolean;
-  }
+  },
 ) => {
   const proxyCache = new WeakMap<{}, {}>();
 
@@ -47,15 +48,20 @@ export const createDeepProxy = <T extends object>(
       return result;
     },
     set(target, prop, value, receiver) {
+      const isNewProperty = !Object.hasOwn(target, prop);
       const unwrappedValue = options?.unwrapSet ? unwrapProxy(value, true) : value;
       const result = Reflect.set(target, prop, unwrappedValue, receiver);
-      options?.callbacks?.set?.(target, prop, unwrappedValue, receiver);
+      options?.callbacks?.set?.(target, prop, unwrappedValue, receiver, isNewProperty);
       return result;
     },
     deleteProperty(target, prop) {
       const result = Reflect.deleteProperty(target, prop);
       options?.callbacks?.deleteProperty?.(target, prop);
       return result;
+    },
+    ownKeys(target) {
+      options?.callbacks?.ownKeys?.(target);
+      return Reflect.ownKeys(target);
     },
   };
 
@@ -66,7 +72,7 @@ export const createRootProxy = <T extends {}>(
   builder: (root: T) => T,
   options?: {
     callbacks: ProxyCallbacks;
-  }
+  },
 ) => {
   const skeleton = {} as T;
   const root = createDeepProxy(skeleton, {

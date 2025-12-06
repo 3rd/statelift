@@ -27,6 +27,8 @@ type ConsumerTargetPropValueMap = WeakMap<ConsumerTarget, Map<ConsumerTargetProp
 
 const stateToStoreInternalsMap = new WeakMap<{}, StoreInternals<{}>>();
 
+const OWNKEYS_DEPENDENCY = Symbol("ownKeys");
+
 export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): Store<T> => {
   const targetDependenciesMap: DependenciesMap = new WeakMap();
   const consumerCallbacksMap: ConsumerCallbacksMap = new Map();
@@ -42,7 +44,7 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
   const notifyConsumers = (
     target: ConsumerTarget,
     prop: ConsumerTargetProp,
-    handler: (consumerId: ConsumerID, callbacks: ConsumerCallbacks) => void
+    handler: (consumerId: ConsumerID, callbacks: ConsumerCallbacks) => void,
   ) => {
     const consumers = getAffectedConsumers(target, prop);
 
@@ -53,24 +55,14 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
     }
   };
 
-  const notifySet = (target: ConsumerTarget, prop: ConsumerTargetProp, value: unknown) => {
-    notifyConsumers(target, prop, (consumerId, callbacks) => {
-      // console.log("notify set", { consumerId, target, prop, value });
-
-      const targetPropValueMap = consumerTargetPropValueMap.get(target);
-      if (!targetPropValueMap) throw new Error("Target prop value map not found");
-
-      const propValueMap = targetPropValueMap.get(prop);
-      if (!propValueMap) throw new Error("Prop value map not found");
-
-      const oldValue = propValueMap.get(consumerId);
-      if (Object.is(oldValue, value)) return;
-
-      propValueMap.set(consumerId, value);
-
+  const notifyOwnKeysConsumers = (target: ConsumerTarget) => {
+    const consumers = getAffectedConsumers(target, OWNKEYS_DEPENDENCY);
+    for (const consumerId of consumers) {
+      const callbacks = consumerCallbacksMap.get(consumerId);
+      if (!callbacks) continue;
       callbacks.revoke(target);
       callbacks.rerender();
-    });
+    }
   };
 
   const notifyDelete = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
@@ -88,6 +80,37 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
       callbacks.revoke(target);
       callbacks.rerender();
     });
+
+    // property deleted, notify consumers that depend on ownKeys
+    notifyOwnKeysConsumers(target);
+  };
+
+  const notifySet = (
+    target: ConsumerTarget,
+    prop: ConsumerTargetProp,
+    value: unknown,
+    isNewProperty: boolean,
+  ) => {
+    notifyConsumers(target, prop, (consumerId, callbacks) => {
+      // console.log("notify set", { consumerId, target, prop, value });
+
+      const targetPropValueMap = consumerTargetPropValueMap.get(target);
+      if (!targetPropValueMap) throw new Error("Target prop value map not found");
+
+      const propValueMap = targetPropValueMap.get(prop);
+      if (!propValueMap) throw new Error("Prop value map not found");
+
+      const oldValue = propValueMap.get(consumerId);
+      if (Object.is(oldValue, value)) return;
+
+      propValueMap.set(consumerId, value);
+
+      callbacks.revoke(target);
+      callbacks.rerender();
+    });
+
+    // new property, notify consumers that depend on ownKeys
+    if (isNewProperty) notifyOwnKeysConsumers(target);
   };
 
   const internals = { currentConsumerId: null } as StoreInternals<T>;
@@ -128,18 +151,38 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
 
         propValueMap.set(internals.currentConsumerId, value);
       },
-      set: (target, prop, value, _receiver) => {
-        notifySet(target, prop, value);
+      set: (target, prop, value, _receiver, isNewProperty) => {
+        notifySet(target, prop, value, isNewProperty);
       },
       deleteProperty: (target, prop) => {
         notifyDelete(target, prop);
+      },
+      ownKeys: (target) => {
+        if (!internals.currentConsumerId) return;
+
+        let targetDependencies = targetDependenciesMap.get(target);
+        if (!targetDependencies) {
+          targetDependencies = new Map();
+          targetDependenciesMap.set(target, targetDependencies);
+        }
+
+        let ownKeysConsumers = targetDependencies.get(OWNKEYS_DEPENDENCY);
+        if (!ownKeysConsumers) {
+          ownKeysConsumers = new Set();
+          targetDependencies.set(OWNKEYS_DEPENDENCY, ownKeysConsumers);
+        }
+        ownKeysConsumers.add(internals.currentConsumerId);
+
+        const consumerDependencies = consumerDependenciesCleanupMap.get(internals.currentConsumerId);
+        if (!consumerDependencies) throw new Error("Consumer dependencies not found");
+        consumerDependencies.add(ownKeysConsumers);
       },
     },
   });
 
   const registerConsumer = (
     id: ConsumerID,
-    callbacks: { rerender: () => void; revoke: (target: ConsumerTarget) => void }
+    callbacks: { rerender: () => void; revoke: (target: ConsumerTarget) => void },
   ) => {
     consumerCallbacksMap.set(id, callbacks);
     consumerDependenciesCleanupMap.set(id, new Set());
@@ -206,6 +249,14 @@ export const createConsumer = <T extends {}>(store: Store<T>, onRerender: () => 
         storeInternals.currentConsumerId = null;
       }
     },
+    ownKeys(target) {
+      storeInternals.currentConsumerId = consumerId;
+      try {
+        return Reflect.ownKeys(target);
+      } finally {
+        storeInternals.currentConsumerId = null;
+      }
+    },
   };
   const { proxy, revoke } = Proxy.revocable(store.state, handlers);
 
@@ -221,7 +272,7 @@ const createMemoizedConsumer = <T extends {}, R>(
   store: Store<T>,
   selectorRef: React.MutableRefObject<Selector<T, R> | undefined>,
   valueRef: React.MutableRefObject<R>,
-  updateRef: React.MutableRefObject<{}>
+  updateRef: React.MutableRefObject<{}>,
 ) => {
   let referenceCount = 0;
   let callbackRef = () => {};
