@@ -39,7 +39,7 @@ describe("createDeepProxy", () => {
     // set 1 time: foo -> primitive
     proxy.foo = "new boo";
     expect(callbacks.set).toHaveBeenCalledTimes(1);
-    expect(callbacks.set).toHaveBeenNthCalledWith(1, target, "foo", "new boo", expect.anything(), false);
+    expect(callbacks.set).toHaveBeenNthCalledWith(1, target, "foo", "new boo", expect.anything(), false, undefined);
     expect(target.foo).toBe("new boo");
 
     // set 1 time: bar -> object
@@ -52,6 +52,7 @@ describe("createDeepProxy", () => {
       { baz: "new zoo" },
       expect.anything(),
       false,
+      undefined,
     );
     expect(target.bar).toEqual({ baz: "new zoo" });
   });

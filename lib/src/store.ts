@@ -151,7 +151,12 @@ export const createStoreFromBuilder = <T extends {}>(builder: (root: T) => T): S
 
         propValueMap.set(internals.currentConsumerId, value);
       },
-      set: (target, prop, value, _receiver, isNewProperty) => {
+      set: (target, prop, value, _receiver, isNewProperty, oldArrayLength) => {
+        if (oldArrayLength !== undefined && typeof value === "number" && value < oldArrayLength) {
+          for (let i = value; i < oldArrayLength; i++) {
+            notifySet(target, String(i), undefined, false);
+          }
+        }
         notifySet(target, prop, value, isNewProperty);
       },
       deleteProperty: (target, prop) => {

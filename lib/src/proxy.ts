@@ -3,7 +3,14 @@ const UNWRAP_PROXY_KEY = Symbol("unwrapped-target");
 
 export type ProxyCallbacks = {
   get: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
-  set: (target: {}, prop: string | symbol, value: unknown, receiver: {}, isNewProperty: boolean) => void;
+  set: (
+    target: {},
+    prop: string | symbol,
+    value: unknown,
+    receiver: {},
+    isNewProperty: boolean,
+    oldArrayLength?: number,
+  ) => void;
   deleteProperty: (target: {}, prop: string | symbol) => void;
   ownKeys: (target: {}) => void;
 };
@@ -49,9 +56,17 @@ export const createDeepProxy = <T extends object>(
     },
     set(target, prop, value, receiver) {
       const isNewProperty = !Object.hasOwn(target, prop);
+      const oldArrayLength =
+        Array.isArray(target) && prop === "length" && typeof value === "number" ?
+          (target as unknown[]).length
+        : undefined;
+      const isArrayLengthTruncation = oldArrayLength !== undefined && value < oldArrayLength;
       const unwrappedValue = options?.unwrapSet ? unwrapProxy(value, true) : value;
       const result = Reflect.set(target, prop, unwrappedValue, receiver);
-      options?.callbacks?.set?.(target, prop, unwrappedValue, receiver, isNewProperty);
+      options?.callbacks?.set?.(target, prop, unwrappedValue, receiver, isNewProperty, oldArrayLength);
+      if (isArrayLengthTruncation) {
+        options?.callbacks?.ownKeys?.(target);
+      }
       return result;
     },
     deleteProperty(target, prop) {
