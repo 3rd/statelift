@@ -456,3 +456,230 @@ for (const { type, create } of storeDefinitions) {
     });
   });
 }
+
+describe("ownKeys dependency tracking", () => {
+  it("rerenders when a new property is added and consumer used Object.keys()", () => {
+    const store = createStore<{ items: Record<string, number> }>({ items: { a: 1, b: 2 } });
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => Object.keys(state.items)));
+
+    expect(result.current.state).toEqual(["a", "b"]);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.items.c = 3;
+    });
+
+    expect(result.current.state).toEqual(["a", "b", "c"]);
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("rerenders when a property is deleted and consumer used Object.keys()", () => {
+    const store = createStore<{ items: Record<string, number | undefined> }>({ items: { a: 1, b: 2, c: 3 } });
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => Object.keys(state.items)));
+
+    expect(result.current.state).toEqual(["a", "b", "c"]);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      delete store.state.items.b;
+    });
+
+    expect(result.current.state).toEqual(["a", "c"]);
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("does not rerender when property value changes but keys stay the same", () => {
+    const store = createStore<{ items: Record<string, number> }>({ items: { a: 1, b: 2 } });
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => Object.keys(state.items)));
+
+    expect(result.current.state).toEqual(["a", "b"]);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.items.a = 100;
+    });
+
+    // keys didn't change, so no rerender
+    expect(result.current.count).toEqual(1);
+  });
+
+  it("rerenders when for...in loop is used and new property is added", () => {
+    const store = createStore<{ data: Record<string, string> }>({ data: { x: "1" } });
+
+    const { result } = renderHook(() =>
+      useStoreWithRenderCount(store, (state) => {
+        const keys: string[] = [];
+        for (const key in state.data) {
+          keys.push(key);
+        }
+        return keys;
+      })
+    );
+
+    expect(result.current.state).toEqual(["x"]);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.data.y = "2";
+    });
+
+    expect(result.current.state).toEqual(["x", "y"]);
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("rerenders when spread operator is used and new property is added", () => {
+    const store = createStore<{ config: Record<string, boolean> }>({ config: { enabled: true } });
+
+    const { result } = renderHook(() =>
+      useStoreWithRenderCount(store, (state) => ({ ...state.config }))
+    );
+
+    expect(result.current.state).toEqual({ enabled: true });
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.config.debug = false;
+    });
+
+    expect(result.current.state).toEqual({ enabled: true, debug: false });
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("does not affect consumers that don't enumerate keys", () => {
+    const store = createStore<{ items: Record<string, number> }>({ items: { a: 1, b: 2 } });
+
+    // consumer only accesses specific property, not keys
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => state.items.a));
+
+    expect(result.current.state).toEqual(1);
+    expect(result.current.count).toEqual(1);
+
+    // add new property - should not trigger rerender for this consumer
+    act(() => {
+      store.state.items.c = 3;
+    });
+
+    expect(result.current.count).toEqual(1);
+
+    // change watched property - should trigger rerender
+    act(() => {
+      store.state.items.a = 100;
+    });
+
+    expect(result.current.state).toEqual(100);
+    expect(result.current.count).toEqual(2);
+  });
+});
+
+describe("array length truncation notifications", () => {
+  it("rerenders consumer watching specific index when that index is removed via length truncation", () => {
+    const store = createStore({ arr: [10, 20, 30, 40, 50] });
+
+    // consumer watches index 3
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => state.arr[3]));
+
+    expect(result.current.state).toEqual(40);
+    expect(result.current.count).toEqual(1);
+
+    // truncate array to remove index 3
+    act(() => {
+      store.state.arr.length = 2;
+    });
+
+    expect(result.current.state).toEqual(undefined);
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("does not rerender consumer watching index that survives truncation", () => {
+    const store = createStore({ arr: [10, 20, 30, 40, 50] });
+
+    // consumer watches index 1
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => state.arr[1]));
+
+    expect(result.current.state).toEqual(20);
+    expect(result.current.count).toEqual(1);
+
+    // truncate array but keep index 1
+    act(() => {
+      store.state.arr.length = 3;
+    });
+
+    // index 1 still exists, no rerender needed for this consumer
+    expect(result.current.state).toEqual(20);
+    expect(result.current.count).toEqual(1);
+  });
+
+  it("rerenders consumer watching array length when truncated", () => {
+    const store = createStore({ arr: [1, 2, 3, 4, 5] });
+
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => state.arr.length));
+
+    expect(result.current.state).toEqual(5);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.arr.length = 2;
+    });
+
+    expect(result.current.state).toEqual(2);
+    expect(result.current.count).toEqual(2);
+  });
+
+  it("does not incorrectly notify when array length is expanded", () => {
+    const store = createStore({ arr: [1, 2, 3] });
+
+    // consumer watches index 5 (doesn't exist yet)
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => state.arr[5]));
+
+    expect(result.current.state).toEqual(undefined);
+    expect(result.current.count).toEqual(1);
+
+    // expand array
+    act(() => {
+      store.state.arr.length = 10;
+    });
+
+    // length expansion doesn't trigger truncation notifications
+    expect(result.current.count).toEqual(1);
+  });
+
+  it("rerenders multiple consumers watching different removed indices", () => {
+    const store = createStore({ arr: [10, 20, 30, 40, 50] });
+
+    // consumer 1 watches index 2
+    const { result: result1 } = renderHook(() => useStoreWithRenderCount(store, (state) => state.arr[2]));
+    // consumer 2 watches index 4
+    const { result: result2 } = renderHook(() => useStoreWithRenderCount(store, (state) => state.arr[4]));
+
+    expect(result1.current.state).toEqual(30);
+    expect(result2.current.state).toEqual(50);
+    expect(result1.current.count).toEqual(1);
+    expect(result2.current.count).toEqual(1);
+
+    // truncate to length 2, removing indices 2, 3, 4
+    act(() => {
+      store.state.arr.length = 2;
+    });
+
+    expect(result1.current.state).toEqual(undefined);
+    expect(result2.current.state).toEqual(undefined);
+    expect(result1.current.count).toEqual(2);
+    expect(result2.current.count).toEqual(2);
+  });
+
+  it("rerenders ownKeys consumer when array is truncated via pop()", () => {
+    const store = createStore({ arr: [1, 2, 3] });
+
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => Object.keys(state.arr)));
+
+    expect(result.current.state).toEqual(["0", "1", "2"]);
+    expect(result.current.count).toEqual(1);
+
+    act(() => {
+      store.state.arr.pop();
+    });
+
+    expect(result.current.state).toEqual(["0", "1"]);
+    expect(result.current.count).toEqual(2);
+  });
+});

@@ -90,6 +90,112 @@ describe("createDeepProxy", () => {
     proxy.foo = "boo";
     expect(proxy.foo).toBe("boo");
   });
+
+  it("calls the ownKeys callback when Object.keys() is used", () => {
+    const target = { foo: "boo", bar: "baz" };
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    Object.keys(proxy);
+    expect(callbacks.ownKeys).toHaveBeenCalledTimes(1);
+    expect(callbacks.ownKeys).toHaveBeenCalledWith(target);
+  });
+
+  it("calls the ownKeys callback when for...in loop is used", () => {
+    const target = { foo: "boo", bar: "baz" };
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    const keys: string[] = [];
+    for (const key in proxy) {
+      keys.push(key);
+    }
+    expect(keys).toEqual(["foo", "bar"]);
+    expect(callbacks.ownKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls the ownKeys callback when spread operator is used", () => {
+    const target = { foo: "boo", bar: "baz" };
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    const spread = { ...proxy };
+    expect(spread).toEqual({ foo: "boo", bar: "baz" });
+    expect(callbacks.ownKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes isNewProperty=true when setting a new property", () => {
+    const target: { foo: string; newProp?: string } = { foo: "boo" };
+    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    proxy.newProp = "new value";
+    expect(callbacks.set).toHaveBeenCalledTimes(1);
+    expect(callbacks.set).toHaveBeenCalledWith(target, "newProp", "new value", expect.anything(), true, undefined);
+  });
+
+  it("passes isNewProperty=false when updating an existing property", () => {
+    const target = { foo: "boo" };
+    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    proxy.foo = "updated";
+    expect(callbacks.set).toHaveBeenCalledTimes(1);
+    expect(callbacks.set).toHaveBeenCalledWith(target, "foo", "updated", expect.anything(), false, undefined);
+  });
+
+  it("passes oldArrayLength when truncating array via length property", () => {
+    const target = [1, 2, 3, 4, 5];
+    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn(), ownKeys: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    proxy.length = 2;
+    expect(callbacks.set).toHaveBeenCalledWith(target, "length", 2, expect.anything(), false, 5);
+    expect(callbacks.ownKeys).toHaveBeenCalledWith(target);
+  });
+
+  it("passes oldArrayLength but does not call ownKeys when expanding array", () => {
+    const target = [1, 2, 3];
+    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn(), ownKeys: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    proxy.length = 10;
+    // oldArrayLength is always passed when setting length on an array
+    expect(callbacks.set).toHaveBeenCalledWith(target, "length", 10, expect.anything(), false, 3);
+    // ownKeys is NOT called because this is expansion, not truncation
+    expect(callbacks.ownKeys).not.toHaveBeenCalled();
+  });
+
+  it("passes oldArrayLength but does not call ownKeys when setting length to same value", () => {
+    const target = [1, 2, 3];
+    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn(), ownKeys: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    proxy.length = 3;
+    // oldArrayLength is always passed when setting length on an array
+    expect(callbacks.set).toHaveBeenCalledWith(target, "length", 3, expect.anything(), false, 3);
+    // ownKeys is NOT called because no truncation occurred
+    expect(callbacks.ownKeys).not.toHaveBeenCalled();
+  });
+
+  it("calls ownKeys callback when array is truncated", () => {
+    const target = [1, 2, 3, 4, 5];
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+
+    const proxy = createDeepProxy(target, { callbacks });
+
+    proxy.length = 2;
+    expect(callbacks.ownKeys).toHaveBeenCalledTimes(1);
+    expect(callbacks.ownKeys).toHaveBeenCalledWith(target);
+  });
 });
 
 describe("createRootProxy", () => {
