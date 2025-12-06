@@ -2,7 +2,7 @@ import { useReducer, useRef } from "react";
 import { createDeepProxy } from "../proxy";
 
 export const useProxyState = <T extends {}>(target: T): T => {
-  const state = useRef<T>();
+  const state = useRef<T | null>(null);
   const [, forceUpdate] = useReducer(() => ({}), {});
 
   if (!state.current) {
@@ -11,5 +11,5 @@ export const useProxyState = <T extends {}>(target: T): T => {
     });
   }
 
-  return state.current;
+  return state.current!;
 };
