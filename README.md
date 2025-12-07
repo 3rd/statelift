@@ -210,6 +210,47 @@ const List = (items: Item[]) => {
 };
 ```
 
+**Batching**
+
+When you need to make multiple state updates that should trigger only a single re-render, use the `batch()` function:
+
+```ts
+import { createStore, batch } from "statelift";
+
+const store = createStore({
+  a: 0,
+  b: 0,
+  c: 0,
+});
+
+// without batch: each assignment triggers a separate re-render
+store.state.a = 1;
+store.state.b = 2;
+store.state.c = 3;
+
+// with batch: all assignments trigger a single re-render
+batch(store, () => {
+  store.state.a = 1;
+  store.state.b = 2;
+  store.state.c = 3;
+});
+```
+
+**Strict Mode**
+
+Built-in objects like `Map`, `Set`, `Date`, and `RegExp` cannot be made reactive due to JavaScript proxy limitations.\
+By default, statelift returns them as-is without proxying, which means changes to them won't trigger re-renders.
+
+If you want to catch accidental usage of non-reactive objects, enable strict mode:
+
+```ts
+const store = createStore(
+  { createdAt: new Date() },
+  { strict: true }
+);
+// throws: built-in objects cannot be made reactive
+```
+
 ### Benchmarks
 
 ![image](https://github.com/3rd/statelift/assets/59587503/eb09b938-3bfe-4283-8f46-ac14dd572da8)
