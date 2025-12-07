@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-COMPARE_FRAMEWORKS="react-hooks react-zustand react-mobX"
+COMPARE_FRAMEWORKS="react-hooks react-compiler-hooks react-rxjs react-mobX react-zustand react-redux"
 # 01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_ 21_ 22_ 23_ 24_ 25_ 26_
 BENCHMARKS=""
 PORT=3000

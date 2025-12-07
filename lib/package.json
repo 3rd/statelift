@@ -18,9 +18,10 @@
     ]
   },
   "scripts": {
-    "dev": "npm run test",
+    "dev": "pnpm run test:watch",
     "build": "tsup --env.NODE_ENV production --clean --minify --dts --sourcemap",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "coverage": "vitest run --coverage",
     "tsc": "tsc --noEmit"

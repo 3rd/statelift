@@ -87,14 +87,13 @@ const actions = {
     store.state.selected = 0;
   },
   add: () => {
-    store.state.data = [...store.state.data, ...buildData(1000)];
+    store.state.data.push(...buildData(1000));
   },
   update: () => {
     const data = store.state.data;
     for (let i = 0, len = data.length; i < len; i += 10) {
-      data[i] = { ...data[i], label: data[i].label + " !!!" };
+      data[i].label += " !!!";
     }
-    store.state.data = [...data];
   },
   clear: () => {
     store.state.data = [];
@@ -103,35 +102,38 @@ const actions = {
   swapRows: () => {
     const data = store.state.data;
     if (data.length > 998) {
-      const newData = [...data];
-      const tmp = newData[1];
-      newData[1] = newData[998];
-      newData[998] = tmp;
-      store.state.data = newData;
+      const tmp = data[1];
+      data[1] = data[998];
+      data[998] = tmp;
     }
   },
   remove: (id) => {
-    store.state.data = store.state.data.filter((d) => d.id !== id);
+    const idx = store.state.data.findIndex((d) => d.id === id);
+    if (idx !== -1) store.state.data.splice(idx, 1);
   },
   select: (id) => {
     store.state.selected = id;
   },
 };
 
-const Row = memo(({ id, label, selected }) => (
-  <tr className={selected ? "danger" : ""}>
-    <td className="col-md-1">{id}</td>
-    <td className="col-md-4">
-      <a onClick={() => actions.select(id)}>{label}</a>
-    </td>
-    <td className="col-md-1">
-      <a onClick={() => actions.remove(id)}>
-        <span className="glyphicon glyphicon-remove" aria-hidden="true" />
-      </a>
-    </td>
-    <td className="col-md-6" />
-  </tr>
-));
+const Row = memo(({ item }) => {
+  const selected = useStore(store, (s) => s.selected === item.id);
+
+  return (
+    <tr className={selected ? "danger" : ""}>
+      <td className="col-md-1">{item.id}</td>
+      <td className="col-md-4">
+        <a onClick={() => actions.select(item.id)}>{item.label}</a>
+      </td>
+      <td className="col-md-1">
+        <a onClick={() => actions.remove(item.id)}>
+          <span className="glyphicon glyphicon-remove" aria-hidden="true" />
+        </a>
+      </td>
+      <td className="col-md-6" />
+    </tr>
+  );
+});
 
 const Button = ({ id, onClick, title }) => (
   <div className="col-sm-6 smallpad">
@@ -165,15 +167,15 @@ const Jumbotron = memo(
 );
 
 const Main = () => {
-  const state = useStore(store);
+  const data = useStore(store, (s) => s.data);
 
   return (
     <div className="container">
       <Jumbotron />
       <table className="table table-hover table-striped test-data">
         <tbody>
-          {state.data.map((item) => (
-            <Row key={item.id} id={item.id} label={item.label} selected={state.selected === item.id} />
+          {data.map((item) => (
+            <Row key={item.id} item={item} />
           ))}
         </tbody>
       </table>
