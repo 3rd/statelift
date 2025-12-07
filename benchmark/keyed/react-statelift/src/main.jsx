@@ -116,17 +116,18 @@ const actions = {
   },
 };
 
-const Row = memo(({ item }) => {
-  const selected = useStore(store, (s) => s.selected === item.id);
+const Row = memo(({ itemId, index }) => {
+  const isSelected = useStore(store, (s) => s.selected === itemId);
+  const label = useStore(store, (s) => s.data[index]?.label);
 
   return (
-    <tr className={selected ? "danger" : ""}>
-      <td className="col-md-1">{item.id}</td>
+    <tr className={isSelected ? "danger" : ""}>
+      <td className="col-md-1">{itemId}</td>
       <td className="col-md-4">
-        <a onClick={() => actions.select(item.id)}>{item.label}</a>
+        <a onClick={() => actions.select(itemId)}>{label}</a>
       </td>
       <td className="col-md-1">
-        <a onClick={() => actions.remove(item.id)}>
+        <a onClick={() => actions.remove(itemId)}>
           <span className="glyphicon glyphicon-remove" aria-hidden="true" />
         </a>
       </td>
@@ -174,8 +175,8 @@ const Main = () => {
       <Jumbotron />
       <table className="table table-hover table-striped test-data">
         <tbody>
-          {data.map((item) => (
-            <Row key={item.id} item={item} />
+          {data.map((item, index) => (
+            <Row key={item.id} itemId={item.id} index={index} />
           ))}
         </tbody>
       </table>

@@ -53,26 +53,32 @@ export const createStoreFromBuilder = <T extends {}>(
   const rerenderQueue: ConsumerID[] = [];
   const rerenderQueueSet = new Set<ConsumerID>();
   let batchingDepth = 0;
+  let flushing = false;
 
   const flushQueue = () => {
-    let i = 0;
-    while (i < rerenderQueue.length) {
-      const id = rerenderQueue[i];
-      const callbacks = consumerCallbacksMap.get(id);
-      callbacks?.rerender();
-      i++;
+    if (flushing) return;
+    flushing = true;
+    try {
+      let i = 0;
+      while (i < rerenderQueue.length) {
+        const id = rerenderQueue[i];
+        const callbacks = consumerCallbacksMap.get(id);
+        callbacks?.rerender();
+        i++;
+      }
+      rerenderQueue.length = 0;
+      rerenderQueueSet.clear();
+    } finally {
+      flushing = false;
     }
-    rerenderQueue.length = 0;
-    rerenderQueueSet.clear();
   };
 
   const scheduleRerender = (consumerId: ConsumerID) => {
     if (!rerenderQueueSet.has(consumerId)) {
-      const shouldProcess = rerenderQueue.length === 0;
       rerenderQueue.push(consumerId);
       rerenderQueueSet.add(consumerId);
 
-      if (shouldProcess && batchingDepth === 0) {
+      if (batchingDepth === 0 && !flushing) {
         flushQueue();
       }
     }
@@ -89,49 +95,46 @@ export const createStoreFromBuilder = <T extends {}>(
     }
   };
 
-  const getAffectedConsumers = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
-    const targetDependencies = targetDependenciesMap.get(target);
-    if (!targetDependencies) return [];
-    return targetDependencies.get(prop) ?? [];
-  };
-
-  const notifyConsumers = (
-    target: ConsumerTarget,
-    prop: ConsumerTargetProp,
-    handler: (consumerId: ConsumerID, callbacks: ConsumerCallbacks) => void,
-  ) => {
-    const consumers = getAffectedConsumers(target, prop);
-
-    for (const consumerId of consumers) {
-      const callbacks = consumerCallbacksMap.get(consumerId);
-      if (!callbacks) throw new Error("Consumer callback not found");
-      handler(consumerId, callbacks);
-    }
-  };
-
   const notifyOwnKeysConsumers = (target: ConsumerTarget) => {
-    const consumers = getAffectedConsumers(target, OWNKEYS_DEPENDENCY);
-    for (const consumerId of consumers) {
-      const callbacks = consumerCallbacksMap.get(consumerId);
-      if (!callbacks) continue;
-      callbacks.revoke(target);
-      scheduleRerender(consumerId);
+    const targetDeps = targetDependenciesMap.get(target);
+    const consumers = targetDeps?.get(OWNKEYS_DEPENDENCY);
+    if (!consumers || consumers.size === 0) return;
+
+    startBatch();
+    try {
+      for (const consumerId of consumers) {
+        const callbacks = consumerCallbacksMap.get(consumerId);
+        if (!callbacks) throw new Error("Consumer callback not found");
+        callbacks.revoke(target);
+        scheduleRerender(consumerId);
+      }
+    } finally {
+      endBatch();
     }
   };
 
   const notifyDelete = (target: ConsumerTarget, prop: ConsumerTargetProp) => {
-    notifyConsumers(target, prop, (consumerId, callbacks) => {
+    const targetDeps = targetDependenciesMap.get(target);
+    const consumers = targetDeps?.get(prop);
+
+    if (consumers && consumers.size > 0) {
       const targetPropValueMap = consumerTargetPropValueMap.get(target);
-      if (!targetPropValueMap) throw new Error("Target prop value map not found");
+      const propValueMap = targetPropValueMap?.get(prop);
 
-      const propValueMap = targetPropValueMap.get(prop);
-      if (!propValueMap) throw new Error("Prop value map not found");
+      startBatch();
+      try {
+        for (const consumerId of consumers) {
+          const callbacks = consumerCallbacksMap.get(consumerId);
+          if (!callbacks) throw new Error("Consumer callback not found");
 
-      propValueMap.delete(consumerId);
-
-      callbacks.revoke(target);
-      scheduleRerender(consumerId);
-    });
+          propValueMap?.delete(consumerId);
+          callbacks.revoke(target);
+          scheduleRerender(consumerId);
+        }
+      } finally {
+        endBatch();
+      }
+    }
 
     // property deleted, notify consumers that depend on ownKeys
     notifyOwnKeysConsumers(target);
@@ -143,21 +146,47 @@ export const createStoreFromBuilder = <T extends {}>(
     value: unknown,
     isNewProperty: boolean,
   ) => {
-    notifyConsumers(target, prop, (consumerId, callbacks) => {
-      const targetPropValueMap = consumerTargetPropValueMap.get(target);
-      if (!targetPropValueMap) throw new Error("Target prop value map not found");
+    const targetDeps = targetDependenciesMap.get(target);
+    const consumers = targetDeps?.get(prop);
 
-      const propValueMap = targetPropValueMap.get(prop);
-      if (!propValueMap) throw new Error("Prop value map not found");
+    // early exit if no consumers
+    if (!consumers || consumers.size === 0) {
+      if (isNewProperty) notifyOwnKeysConsumers(target);
+      return;
+    }
 
-      const oldValue = propValueMap.get(consumerId);
-      if (Object.is(oldValue, value)) return;
+    const targetPropValueMap = consumerTargetPropValueMap.get(target);
+    const propValueMap = targetPropValueMap?.get(prop);
 
-      propValueMap.set(consumerId, value);
+    // early bailout
+    if (propValueMap && propValueMap.size > 0) {
+      const firstConsumerId = consumers.values().next().value;
+      if (firstConsumerId !== undefined) {
+        const representativeOldValue = propValueMap.get(firstConsumerId);
+        if (Object.is(representativeOldValue, value)) {
+          // value unchanged for all consumers - skip
+          if (isNewProperty) notifyOwnKeysConsumers(target);
+          return;
+        }
+      }
+    }
 
-      callbacks.revoke(target);
-      scheduleRerender(consumerId);
-    });
+    startBatch();
+    try {
+      for (const consumerId of consumers) {
+        const callbacks = consumerCallbacksMap.get(consumerId);
+        if (!callbacks) throw new Error("Consumer callback not found");
+
+        if (propValueMap) {
+          propValueMap.set(consumerId, value);
+        }
+
+        callbacks.revoke(target);
+        scheduleRerender(consumerId);
+      }
+    } finally {
+      endBatch();
+    }
 
     // new property, notify consumers that depend on ownKeys
     if (isNewProperty) notifyOwnKeysConsumers(target);
@@ -236,15 +265,22 @@ export const createStoreFromBuilder = <T extends {}>(
         const targetDependencies = targetDependenciesMap.get(target);
         if (!targetDependencies) return;
 
-        // use explicit batching
+        // collect unique consumers
+        const uniqueConsumers = new Set<ConsumerID>();
+        for (const [, consumers] of targetDependencies) {
+          for (const consumerId of consumers) {
+            uniqueConsumers.add(consumerId);
+          }
+        }
+        if (uniqueConsumers.size === 0) return;
+
         startBatch();
         try {
-          for (const [_prop, consumers] of targetDependencies) {
-            for (const consumerId of consumers) {
-              const callbacks = consumerCallbacksMap.get(consumerId);
-              if (callbacks) callbacks.revoke(target);
-              scheduleRerender(consumerId);
-            }
+          for (const consumerId of uniqueConsumers) {
+            const callbacks = consumerCallbacksMap.get(consumerId);
+            if (!callbacks) throw new Error("Consumer callback not found");
+            callbacks.revoke(target);
+            scheduleRerender(consumerId);
           }
         } finally {
           endBatch();
