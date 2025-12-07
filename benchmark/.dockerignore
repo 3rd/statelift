@@ -1,0 +1,4 @@
+results/
+keyed/*/node_modules/
+keyed/*/dist/
+*.md

@@ -1,0 +1,18 @@
+services:
+  benchmark:
+    build: .
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ../lib:/statelift:ro
+      - ./keyed/react-statelift:/react-statelift:ro
+      - ./results:/results
+    environment:
+      - COMPARE_FRAMEWORKS=${COMPARE_FRAMEWORKS:-react-hooks react-zustand react-mobX}
+      # 01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_ 21_ 22_ 23_ 24_ 25_ 26_
+      - BENCHMARKS=${BENCHMARKS:-}
+      - KEEP_ALIVE=${KEEP_ALIVE:-false}
+    ports:
+      - "${PORT:-8080}:8080"
+    shm_size: 4gb
+    security_opt:
+      - seccomp:unconfined

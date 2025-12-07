@@ -1,0 +1,29 @@
+@import url("https://cdn.jsdelivr.net/npm/bootstrap@3.4.1/dist/css/bootstrap.min.css");
+
+/* js-framework-benchmark main.css */
+body {
+  padding: 10px 0 0 0;
+  margin: 0;
+  overflow-y: scroll;
+}
+#duration {
+  padding-top: 0px;
+}
+.jumbotron {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.test-data a {
+  display: block;
+}
+.preloadicon {
+  position: absolute;
+  top: -20px;
+  left: -20px;
+}
+.col-sm-6.smallpad {
+  padding: 5px;
+}
+.jumbotron .row h1 {
+  font-size: 40px;
+}

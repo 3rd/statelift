@@ -1,0 +1,29 @@
+{
+  "name": "js-framework-benchmark-react-statelift",
+  "version": "1.0.0",
+  "js-framework-benchmark": {
+    "frameworkVersion": "react-19 + statelift-1.0.15",
+    "frameworkHomeURL": "https://github.com/3rd/statelift"
+  },
+  "scripts": {
+    "dev": "webpack --config webpack.config.js --watch --mode=development",
+    "build-prod": "webpack --config webpack.config.js --mode=production",
+    "serve": "serve ../.. -l 8080",
+    "bench": "npm run build-prod && npm run serve"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "statelift": "file:../../../lib"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-react": "^7.26.3",
+    "babel-loader": "^9.2.1",
+    "serve": "^14.2.5",
+    "terser-webpack-plugin": "^5.3.10",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^5.1.4"
+  }
+}
