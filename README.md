@@ -251,6 +251,49 @@ const store = createStore(
 // throws: built-in objects cannot be made reactive
 ```
 
+**Creating bound hooks with createUseStore**
+
+For cleaner imports and better ergonomics, you can create a pre-bound hook for your store using `createUseStore()`:
+
+```tsx
+// stores/cart.ts
+import { createStore, createUseStore } from "statelift";
+
+type CartItem = { id: string; name: string; quantity: number };
+
+const cartStore = createStore({
+  items: [] as CartItem[],
+  addItem(item: CartItem) {
+    this.items.push(item);
+  },
+  get total() {
+    return this.items.reduce((sum, item) => sum + item.quantity, 0);
+  },
+});
+
+export const useCartStore = createUseStore(cartStore);
+
+// components/CartBadge.tsx
+import { useCartStore } from "../stores/cart";
+
+const CartBadge = () => {
+  const total = useCartStore((s) => s.total);
+  return <span>{total} items</span>;
+};
+
+// components/CartList.tsx
+const CartList = () => {
+  const cart = useCartStore();
+  return (
+    <ul>
+      {cart.items.map((item) => (
+        <li key={item.id}>{item.name} x{item.quantity}</li>
+      ))}
+    </ul>
+  );
+};
+```
+
 ### Benchmarks
 
 ![image](https://github.com/3rd/statelift/assets/59587503/eb09b938-3bfe-4283-8f46-ac14dd572da8)

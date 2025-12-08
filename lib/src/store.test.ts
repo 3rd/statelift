@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-magic-numbers */
 /* eslint-disable no-param-reassign */
 import { vi } from "vitest";
-import { Selector, Store, createConsumer, createStore, useStore } from "./store";
+import { Selector, Store, createConsumer, createStore, createUseStore, useStore } from "./store";
 import { renderHook, act } from "@testing-library/react";
 import { useRef } from "react";
 
@@ -780,5 +780,66 @@ describe("strict mode", () => {
 
     expect(result.current.count).toEqual(2);
     expect(result.current.state).not.toBe(oldDate);
+  });
+});
+
+describe("createUseStore", () => {
+  it("returns full state when called without selector", () => {
+    const store = createStore({ count: 0, name: "test" });
+    const useTestStore = createUseStore(store);
+
+    const { result } = renderHook(() => useTestStore());
+
+    expect(result.current).toEqual({ count: 0, name: "test" });
+  });
+
+  it("returns selected value when called with selector", () => {
+    const store = createStore({ count: 42, name: "test" });
+    const useTestStore = createUseStore(store);
+
+    const { result } = renderHook(() => useTestStore((s) => s.count));
+
+    expect(result.current).toEqual(42);
+  });
+
+  it("rerenders when selected state changes", () => {
+    const store = createStore({ count: 0, name: "test" });
+    const useTestStore = createUseStore(store);
+
+    let renderCount = 0;
+    const { result } = renderHook(() => {
+      renderCount++;
+      return useTestStore((s) => s.count);
+    });
+
+    expect(result.current).toEqual(0);
+    expect(renderCount).toEqual(1);
+
+    act(() => {
+      store.state.count = 5;
+    });
+
+    expect(result.current).toEqual(5);
+    expect(renderCount).toEqual(2);
+  });
+
+  it("does not rerender when unrelated state changes", () => {
+    const store = createStore({ count: 0, name: "test" });
+    const useTestStore = createUseStore(store);
+
+    let renderCount = 0;
+    const { result } = renderHook(() => {
+      renderCount++;
+      return useTestStore((s) => s.count);
+    });
+
+    expect(renderCount).toEqual(1);
+
+    act(() => {
+      store.state.name = "changed";
+    });
+
+    expect(renderCount).toEqual(1);
+    expect(result.current).toEqual(0);
   });
 });

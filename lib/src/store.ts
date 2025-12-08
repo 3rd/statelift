@@ -489,3 +489,25 @@ export const batch = <T extends {}, R>(store: Store<T>, fn: () => R): R => {
     internals.endBatch();
   }
 };
+
+/**
+ * Creates a bound useStore hook for a specific store.
+ * @example
+ * const editorStore = createStore({ count: 0 });
+ * export const useEditorStore = createUseStore(editorStore);
+ *
+ * // In components:
+ * const state = useEditorStore(); // full state
+ * const count = useEditorStore(s => s.count); // with selector
+ */
+export function createUseStore<T extends {}>(store: Store<T>) {
+  function useStoreHook(): T;
+  function useStoreHook<R>(selector: Selector<T, R>): R;
+  function useStoreHook<R>(selector?: Selector<T, R>) {
+    if (selector) {
+      return useStore(store, selector);
+    }
+    return useStore(store);
+  }
+  return useStoreHook;
+}
