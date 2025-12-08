@@ -10,15 +10,15 @@ export const WELL_KNOWN_SYMBOLS = new Set(
 );
 
 const COMPOUND_ARRAY_METHODS = new Set([
-  "splice",
-  "push",
-  "pop",
-  "shift",
-  "unshift",
-  "reverse",
-  "sort",
-  "fill",
   "copyWithin",
+  "fill",
+  "pop",
+  "push",
+  "reverse",
+  "shift",
+  "sort",
+  "splice",
+  "unshift",
 ]);
 
 export const hasInternalSlots = (value: unknown): boolean => {

@@ -4,7 +4,7 @@
 \
 Its main purpose is to offer the simplest way of creating and using state containers.
 
-> [!IMPORTANT]  
+> [!IMPORTANT]
 > Statelift is in a working but experimental state, proceed at your own peril.
 > \
 > Don't put weird things in your store.
@@ -293,6 +293,30 @@ const CartList = () => {
   );
 };
 ```
+
+**localStorage Persistence**
+
+Automatically persist your store to localStorage with a single option:
+
+```ts
+const store = createStore(
+  { theme: "dark", fontSize: 14 },
+  { persist: "user-preferences" }
+);
+
+// State is automatically:
+// - Loaded from localStorage on initialization
+// - Saved to localStorage on every change
+// - Merged with initial state (localStorage values win)
+
+store.state.theme = "light"; // automatically persisted
+```
+
+Notes:
+- Only serializable data is persisted
+- Invalid JSON in localStorage throws an error
+- Quota exceeded errors throw
+
 
 ### Benchmarks
 

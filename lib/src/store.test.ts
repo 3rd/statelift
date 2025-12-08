@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-magic-numbers */
 /* eslint-disable no-param-reassign */
-import { vi } from "vitest";
-import { Selector, Store, createConsumer, createStore, createUseStore, useStore } from "./store";
-import { renderHook, act } from "@testing-library/react";
 import { useRef } from "react";
+import { act, renderHook } from "@testing-library/react";
+import { vi } from "vitest";
+import { createConsumer, createStore, createUseStore, Selector, Store, useStore } from "./store";
 
 type State = {
   top: number;
@@ -110,7 +110,7 @@ const createSelfReferencingStoreWithStoreInstance = () => {
 export function useStoreWithRenderCount<T extends {}>(store: Store<T>): { count: number; state: T };
 export function useStoreWithRenderCount<T extends {}, R>(
   store: Store<T>,
-  selector: Selector<T, R>
+  selector: Selector<T, R>,
 ): { count: number; state: R };
 export function useStoreWithRenderCount<T extends {}, R>(store: Store<T>, selector?: Selector<T, R>) {
   const innerStore = useStore(store, selector!);
@@ -423,7 +423,7 @@ for (const { type, create } of storeDefinitions) {
             a: state.nested.a,
             b: state.nested.b,
             sum: state.nested.a + state.nested.b,
-          }))
+          })),
         );
 
         expect(result.current).toEqual({ a: 3, b: 5, sum: 8 });
@@ -433,7 +433,7 @@ for (const { type, create } of storeDefinitions) {
         const store = create();
 
         const { result } = renderHook(() =>
-          useStoreWithRenderCount(store, (state) => state.nested.a + state.nested.b)
+          useStoreWithRenderCount(store, (state) => state.nested.a + state.nested.b),
         );
 
         expect(result.current.state).toEqual(8);
@@ -513,7 +513,7 @@ describe("ownKeys dependency tracking", () => {
           keys.push(key);
         }
         return keys;
-      })
+      }),
     );
 
     expect(result.current.state).toEqual(["x"]);
@@ -530,9 +530,7 @@ describe("ownKeys dependency tracking", () => {
   it("rerenders when spread operator is used and new property is added", () => {
     const store = createStore<{ config: Record<string, boolean> }>({ config: { enabled: true } });
 
-    const { result } = renderHook(() =>
-      useStoreWithRenderCount(store, (state) => ({ ...state.config }))
-    );
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => ({ ...state.config })));
 
     expect(result.current.state).toEqual({ enabled: true });
     expect(result.current.count).toEqual(1);
@@ -688,9 +686,7 @@ describe("'in' operator dependency tracking", () => {
   it("rerenders when using 'in' operator and property is added", () => {
     const store = createStore<{ data: Record<string, number> }>({ data: { a: 1 } });
 
-    const { result } = renderHook(() =>
-      useStoreWithRenderCount(store, (state) => "b" in state.data)
-    );
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => "b" in state.data));
 
     expect(result.current.state).toEqual(false);
     expect(result.current.count).toEqual(1);
@@ -706,9 +702,7 @@ describe("'in' operator dependency tracking", () => {
   it("rerenders when using 'in' operator and property is deleted", () => {
     const store = createStore<{ data: Record<string, number | undefined> }>({ data: { a: 1, b: 2 } });
 
-    const { result } = renderHook(() =>
-      useStoreWithRenderCount(store, (state) => "b" in state.data)
-    );
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => "b" in state.data));
 
     expect(result.current.state).toEqual(true);
     expect(result.current.count).toEqual(1);
@@ -724,9 +718,7 @@ describe("'in' operator dependency tracking", () => {
   it("does not rerender when unrelated property changes", () => {
     const store = createStore<{ data: Record<string, number> }>({ data: { a: 1, b: 2 } });
 
-    const { result } = renderHook(() =>
-      useStoreWithRenderCount(store, (state) => "a" in state.data)
-    );
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => "a" in state.data));
 
     expect(result.current.state).toEqual(true);
     expect(result.current.count).toEqual(1);
@@ -767,9 +759,7 @@ describe("strict mode", () => {
   it("built-in object replacement still triggers rerenders", () => {
     const store = createStore<{ date: Date }>({ date: new Date("2024-01-01") });
 
-    const { result } = renderHook(() =>
-      useStoreWithRenderCount(store, (state) => state.date)
-    );
+    const { result } = renderHook(() => useStoreWithRenderCount(store, (state) => state.date));
 
     expect(result.current.count).toEqual(1);
     const oldDate = result.current.state;
@@ -841,5 +831,90 @@ describe("createUseStore", () => {
 
     expect(renderCount).toEqual(1);
     expect(result.current).toEqual(0);
+  });
+});
+
+describe("persist option", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("saves state to localStorage on changes", async () => {
+    const store = createStore({ count: 0 }, { persist: "test-store" });
+
+    store.state.count = 5;
+
+    // wait for microtask to flush
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saved = JSON.parse(localStorage.getItem("test-store")!);
+    expect(saved.count).toEqual(5);
+  });
+
+  it("loads state from localStorage on init", () => {
+    localStorage.setItem("test-store-2", JSON.stringify({ count: 42 }));
+
+    const store = createStore({ count: 0 }, { persist: "test-store-2" });
+
+    expect(store.state.count).toEqual(42);
+  });
+
+  it("merges localStorage with initial state (localStorage wins)", () => {
+    localStorage.setItem("test-store-3", JSON.stringify({ count: 10 }));
+
+    const store = createStore({ count: 0, name: "default" }, { persist: "test-store-3" });
+
+    expect(store.state.count).toEqual(10);
+    expect(store.state.name).toEqual("default");
+  });
+
+  it("throws for invalid JSON in localStorage", () => {
+    localStorage.setItem("test-store-4", "not valid json");
+
+    expect(() => {
+      createStore({ count: 0 }, { persist: "test-store-4" });
+    }).toThrow("Failed to parse localStorage item");
+  });
+
+  it("persists nested object changes", async () => {
+    const store = createStore({ user: { name: "test" } }, { persist: "test-store-5" });
+
+    store.state.user.name = "updated";
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saved = JSON.parse(localStorage.getItem("test-store-5")!);
+    expect(saved.user.name).toEqual("updated");
+  });
+
+  it("persists array changes", async () => {
+    const store = createStore({ items: [1, 2, 3] }, { persist: "test-store-6" });
+
+    store.state.items.push(4);
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saved = JSON.parse(localStorage.getItem("test-store-6")!);
+    expect(saved.items).toEqual([1, 2, 3, 4]);
+  });
+
+  it("does not persist functions", async () => {
+    const store = createStore(
+      {
+        count: 0,
+        increment() {
+          this.count++;
+        },
+      },
+      { persist: "test-store-7" },
+    );
+
+    store.state.increment();
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saved = JSON.parse(localStorage.getItem("test-store-7")!);
+    expect(saved.count).toEqual(1);
+    expect(saved.increment).toBeUndefined();
   });
 });

@@ -38,6 +38,48 @@ export type StoreOptions = {
    * Default: false (built-ins work but aren't tracked).
    */
   strict?: boolean;
+  /**
+   * If provided, persists the store to localStorage under this key.
+   * State is automatically saved on changes and restored on initialization.
+   * Functions and getters are not persisted (only serializable data).
+   */
+  persist?: string;
+};
+
+const safeLocalStorage = {
+  get(key: string): unknown {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch {
+      throw new Error(`Failed to parse localStorage item for key "${key}"`);
+    }
+  },
+  set(key: string, value: unknown): void {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      throw new Error(`Failed to set localStorage item for key "${key}" (quota exceeded?)`);
+    }
+  },
+};
+
+const deepMerge = <T extends {}>(target: T, source: unknown): T => {
+  if (!source || typeof source !== "object") return target;
+  for (const key of Object.keys(source as object)) {
+    const sourceVal = (source as Record<string, unknown>)[key];
+    const targetVal = (target as Record<string, unknown>)[key];
+    if (sourceVal && typeof sourceVal === "object" && !Array.isArray(sourceVal)) {
+      if (targetVal && typeof targetVal === "object" && !Array.isArray(targetVal)) {
+        deepMerge(targetVal as {}, sourceVal);
+      } else {
+        (target as Record<string, unknown>)[key] = sourceVal;
+      }
+    } else {
+      (target as Record<string, unknown>)[key] = sourceVal;
+    }
+  }
+  return target;
 };
 
 export const createStoreFromBuilder = <T extends {}>(
@@ -48,6 +90,10 @@ export const createStoreFromBuilder = <T extends {}>(
   const consumerCallbacksMap: ConsumerCallbacksMap = new Map();
   const consumerDependenciesCleanupMap: ConsumerDependenciesCleanupMap = new Map();
   const consumerTargetPropValueMap: ConsumerTargetPropValueMap = new WeakMap();
+
+  const persistKey = options?.persist;
+  let persistScheduled = false;
+  let persistEnabled = false;
 
   // batch nested notifications + batch() support
   const rerenderQueue: ConsumerID[] = [];
@@ -82,6 +128,22 @@ export const createStoreFromBuilder = <T extends {}>(
         flushQueue();
       }
     }
+  };
+
+  const schedulePersist = () => {
+    if (!persistKey || !persistEnabled || persistScheduled) return;
+    persistScheduled = true;
+    queueMicrotask(() => {
+      persistScheduled = false;
+      try {
+        safeLocalStorage.set(persistKey, state);
+      } catch {
+        // re-throw but avoid breaking the notifications
+        setTimeout(() => {
+          throw new Error(`Failed to persist store to localStorage`);
+        }, 0);
+      }
+    });
   };
 
   const startBatch = () => {
@@ -237,9 +299,11 @@ export const createStoreFromBuilder = <T extends {}>(
           }
         }
         notifySet(target, prop, value, isNewProperty);
+        schedulePersist();
       },
       deleteProperty: (target, prop) => {
         notifyDelete(target, prop);
+        schedulePersist();
       },
       ownKeys: (target) => {
         if (!internals.currentConsumerId) return;
@@ -263,7 +327,10 @@ export const createStoreFromBuilder = <T extends {}>(
       },
       arrayMethodComplete: (target) => {
         const targetDependencies = targetDependenciesMap.get(target);
-        if (!targetDependencies) return;
+        if (!targetDependencies) {
+          schedulePersist();
+          return;
+        }
 
         // collect unique consumers
         const uniqueConsumers = new Set<ConsumerID>();
@@ -272,7 +339,10 @@ export const createStoreFromBuilder = <T extends {}>(
             uniqueConsumers.add(consumerId);
           }
         }
-        if (uniqueConsumers.size === 0) return;
+        if (uniqueConsumers.size === 0) {
+          schedulePersist();
+          return;
+        }
 
         startBatch();
         try {
@@ -285,6 +355,7 @@ export const createStoreFromBuilder = <T extends {}>(
         } finally {
           endBatch();
         }
+        schedulePersist();
       },
     },
     strict: options?.strict,
@@ -309,6 +380,14 @@ export const createStoreFromBuilder = <T extends {}>(
       consumerDependenciesCleanupMap.delete(id);
     };
   };
+
+  if (persistKey) {
+    const saved = safeLocalStorage.get(persistKey);
+    if (saved && typeof saved === "object") {
+      deepMerge(state, saved);
+    }
+    persistEnabled = true;
+  }
 
   internals.state = state;
   internals.registerConsumer = registerConsumer;

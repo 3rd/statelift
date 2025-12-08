@@ -39,7 +39,15 @@ describe("createDeepProxy", () => {
     // set 1 time: foo -> primitive
     proxy.foo = "new boo";
     expect(callbacks.set).toHaveBeenCalledTimes(1);
-    expect(callbacks.set).toHaveBeenNthCalledWith(1, target, "foo", "new boo", expect.anything(), false, undefined);
+    expect(callbacks.set).toHaveBeenNthCalledWith(
+      1,
+      target,
+      "foo",
+      "new boo",
+      expect.anything(),
+      false,
+      undefined,
+    );
     expect(target.foo).toBe("new boo");
 
     // set 1 time: bar -> object
@@ -135,7 +143,14 @@ describe("createDeepProxy", () => {
 
     proxy.newProp = "new value";
     expect(callbacks.set).toHaveBeenCalledTimes(1);
-    expect(callbacks.set).toHaveBeenCalledWith(target, "newProp", "new value", expect.anything(), true, undefined);
+    expect(callbacks.set).toHaveBeenCalledWith(
+      target,
+      "newProp",
+      "new value",
+      expect.anything(),
+      true,
+      undefined,
+    );
   });
 
   it("passes isNewProperty=false when updating an existing property", () => {
@@ -305,7 +320,14 @@ describe("defineProperty trap", () => {
       configurable: true,
     });
 
-    expect(callbacks.set).toHaveBeenCalledWith(target, "defined", "via defineProperty", target, true, undefined);
+    expect(callbacks.set).toHaveBeenCalledWith(
+      target,
+      "defined",
+      "via defineProperty",
+      target,
+      true,
+      undefined,
+    );
     expect(target.defined).toBe("via defineProperty");
   });
 
