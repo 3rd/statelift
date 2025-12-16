@@ -28,6 +28,7 @@ type ConsumerDependenciesCleanupMap = Map<ConsumerID, Set<Set<ConsumerID>>>;
 type ConsumerTargetPropValueMap = WeakMap<ConsumerTarget, Map<ConsumerTargetProp, Map<ConsumerID, unknown>>>;
 
 const stateToStoreInternalsMap = new WeakMap<{}, StoreInternals<{}>>();
+const UNINITIALIZED = Symbol("UNINITIALIZED");
 
 const OWNKEYS_DEPENDENCY = Symbol("ownKeys");
 
@@ -484,31 +485,26 @@ export const createConsumer = <T extends {}>(store: Store<T>, onRerender: () => 
 const createMemoizedConsumer = <T extends {}, R>(
   store: Store<T>,
   selectorRef: React.MutableRefObject<Selector<T, R> | undefined>,
-  valueRef: React.MutableRefObject<R>,
-  updateRef: React.MutableRefObject<{}>,
 ) => {
   let referenceCount = 0;
   let callbackRef = () => {};
+  let snapshot: R | typeof UNINITIALIZED = UNINITIALIZED;
 
   const consumer = createConsumer(store, () => {
     if (selectorRef.current) {
       const newValue = selectorRef.current(consumer.proxy as T);
-      if (Object.is(newValue, valueRef.current)) return;
-      // eslint-disable-next-line no-param-reassign
-      valueRef.current = newValue;
+      if (Object.is(newValue, snapshot)) return;
+      snapshot = newValue;
     } else {
-      // eslint-disable-next-line no-param-reassign
-      valueRef.current = new Proxy(consumer.proxy, {}) as unknown as R;
+      // create new proxy wrapper to invalidate reference
+      snapshot = new Proxy(consumer.proxy, {}) as unknown as R;
     }
-    // eslint-disable-next-line no-param-reassign
-    updateRef.current = {};
     callbackRef();
   });
 
-  const onStoreChange = (callback: () => void) => {
+  const subscribe = (callback: () => void) => {
     callbackRef = callback;
     referenceCount++;
-
     return () => {
       referenceCount--;
       queueMicrotask(() => {
@@ -517,34 +513,37 @@ const createMemoizedConsumer = <T extends {}, R>(
     };
   };
 
-  return { onStoreChange, proxy: consumer.proxy };
-};
+  const getSnapshot = (): R => {
+    if (snapshot === UNINITIALIZED) {
+      if (selectorRef.current) {
+        snapshot = selectorRef.current(consumer.proxy as T);
+      } else {
+        snapshot = consumer.proxy as unknown as R;
+      }
+    }
+    return snapshot;
+  };
 
-const initRefValue = {};
+  const getServerSnapshot = getSnapshot;
+
+  return { subscribe, getSnapshot, getServerSnapshot, proxy: consumer.proxy };
+};
 
 export function useStore<T extends {}>(store: Store<T>): T;
 export function useStore<T extends {}, R>(store: Store<T>, selector: Selector<T, R>): R;
 export function useStore<T extends {}, R>(store: Store<T>, selector?: Selector<T, R>) {
-  const updateRef = useRef({});
-  const valueRef = useRef<R>(initRefValue as unknown as R);
   const selectorRef = useRef(selector);
-
   selectorRef.current = selector;
 
   const memoizedConsumer = useMemo(() => {
-    return createMemoizedConsumer<T, R>(store, selectorRef, valueRef, updateRef);
+    return createMemoizedConsumer<T, R>(store, selectorRef);
   }, [store]);
 
-  useSyncExternalStore(memoizedConsumer.onStoreChange, () => updateRef.current);
-
-  if (selectorRef.current) {
-    if (valueRef.current === initRefValue) {
-      valueRef.current = selectorRef.current(memoizedConsumer.proxy);
-    }
-    return valueRef.current;
-  }
-
-  return valueRef.current === initRefValue ? memoizedConsumer.proxy : valueRef.current;
+  return useSyncExternalStore(
+    memoizedConsumer.subscribe,
+    memoizedConsumer.getSnapshot,
+    memoizedConsumer.getServerSnapshot,
+  );
 }
 
 /**
