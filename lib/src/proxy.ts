@@ -54,6 +54,23 @@ export const unwrapProxy = <T extends {}>(object: T, deep = false): T => {
   return unwrapped ?? object;
 };
 
+export const unwrapDeepProxy = <T>(value: T): T => {
+  if (value === null || typeof value !== "object") return value;
+  if (value instanceof Function) return value;
+
+  const unwrapped = unwrapProxy(value as object, true);
+
+  if (Array.isArray(unwrapped)) {
+    return unwrapped.map(unwrapDeepProxy) as T;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(unwrapped)) {
+    result[key] = unwrapDeepProxy((unwrapped as Record<string, unknown>)[key]);
+  }
+  return result as T;
+};
+
 export const createDeepProxy = <T extends object>(
   object: T,
   options?: {

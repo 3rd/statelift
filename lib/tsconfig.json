@@ -3,7 +3,7 @@
     "target": "ES6",
     "module": "ESNext",
     "lib": ["DOM", "ESNext"],
-    "importHelpers": true,
+    "importHelpers": false,
     "declaration": true,
     "sourceMap": true,
     "strict": true,

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-magic-numbers */
 /* eslint-disable no-param-reassign */
 import { vi } from "vitest";
-import { createDeepProxy, createRootProxy, ProxyCallbacks } from "./proxy";
+import { createDeepProxy, createRootProxy, ProxyCallbacks, unwrapDeepProxy, unwrapProxy } from "./proxy";
 
 describe("createDeepProxy", () => {
   it("creates a deep proxy for the target object", () => {
@@ -392,5 +392,118 @@ describe("built-in objects handling", () => {
 
     expect(() => proxy.obj.a).not.toThrow();
     expect(() => proxy.arr[0]).not.toThrow();
+  });
+});
+
+describe("unwrapDeepProxy", () => {
+  it("returns primitives as-is", () => {
+    expect(unwrapDeepProxy(42)).toBe(42);
+    expect(unwrapDeepProxy("hello")).toBe("hello");
+    expect(unwrapDeepProxy(true)).toBe(true);
+    expect(unwrapDeepProxy(null)).toBe(null);
+    expect(unwrapDeepProxy(undefined)).toBe(undefined);
+  });
+
+  it("returns functions as-is", () => {
+    const fn = () => 42;
+    expect(unwrapDeepProxy(fn)).toBe(fn);
+  });
+
+  it("unwraps a simple proxied object", () => {
+    const target = { foo: "bar", count: 42 };
+    const proxy = createDeepProxy(target);
+
+    const result = unwrapDeepProxy(proxy);
+
+    expect(result).toEqual(target);
+    expect(result).not.toBe(proxy);
+    // result is a new plain object, not the original target
+    expect(unwrapProxy(result)).toBe(result);
+  });
+
+  it("unwraps nested proxied objects", () => {
+    const target = { user: { name: "alice", profile: { age: 30 } } };
+    const proxy = createDeepProxy(target);
+
+    const result = unwrapDeepProxy(proxy);
+
+    expect(result).toEqual(target);
+    expect(result.user).toEqual(target.user);
+    expect(result.user.profile).toEqual(target.user.profile);
+
+    // verify all levels are plain objects
+    expect(unwrapProxy(result)).toBe(result);
+    expect(unwrapProxy(result.user)).toBe(result.user);
+    expect(unwrapProxy(result.user.profile)).toBe(result.user.profile);
+  });
+
+  it("unwraps arrays with proxied elements", () => {
+    const target = { items: [{ id: 1 }, { id: 2 }, { id: 3 }] };
+    const proxy = createDeepProxy(target);
+
+    const result = unwrapDeepProxy(proxy);
+
+    expect(result).toEqual(target);
+    expect(Array.isArray(result.items)).toBe(true);
+    expect(result.items).toHaveLength(3);
+
+    // verify array elements are plain objects
+    for (const item of result.items) {
+      expect(unwrapProxy(item)).toBe(item);
+    }
+  });
+
+  it("unwraps deeply nested mixed structures", () => {
+    const target = {
+      users: [
+        { name: "alice", tags: ["admin", "user"] },
+        { name: "bob", tags: ["user"] },
+      ],
+      meta: { count: 2, nested: { deep: { value: 42 } } },
+    };
+    const proxy = createDeepProxy(target);
+
+    const result = unwrapDeepProxy(proxy);
+
+    expect(result).toEqual(target);
+
+    // verify structure is fully unwrapped
+    expect(unwrapProxy(result.meta.nested.deep)).toBe(result.meta.nested.deep);
+    expect(unwrapProxy(result.users[0])).toBe(result.users[0]);
+  });
+
+  it("handles empty objects and arrays", () => {
+    const target = { empty: {}, arr: [] };
+    const proxy = createDeepProxy(target);
+
+    const result = unwrapDeepProxy(proxy);
+
+    expect(result).toEqual(target);
+    expect(result.empty).toEqual({});
+    expect(result.arr).toEqual([]);
+  });
+
+  it("preserves values after mutations", () => {
+    const target = { count: 0, items: [1, 2, 3] };
+    const proxy = createDeepProxy(target);
+
+    proxy.count = 100;
+    proxy.items.push(4);
+
+    const result = unwrapDeepProxy(proxy);
+
+    expect(result.count).toBe(100);
+    expect(result.items).toEqual([1, 2, 3, 4]);
+  });
+
+  it("returns new object, not original target", () => {
+    const target = { foo: "bar" };
+    const proxy = createDeepProxy(target);
+
+    const result = unwrapDeepProxy(proxy);
+
+    // result has same values but is a new object
+    expect(result).toEqual(target);
+    expect(result).not.toBe(target);
   });
 });
