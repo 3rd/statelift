@@ -74,9 +74,11 @@ const deepMerge = <T extends {}>(target: T, source: unknown): T => {
       if (targetVal && typeof targetVal === "object" && !Array.isArray(targetVal)) {
         deepMerge(targetVal as {}, sourceVal);
       } else {
+        // eslint-disable-next-line no-param-reassign
         (target as Record<string, unknown>)[key] = sourceVal;
       }
     } else {
+      // eslint-disable-next-line no-param-reassign
       (target as Record<string, unknown>)[key] = sourceVal;
     }
   }
@@ -137,6 +139,7 @@ export const createStoreFromBuilder = <T extends {}>(
     queueMicrotask(() => {
       persistScheduled = false;
       try {
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
         safeLocalStorage.set(persistKey, state);
       } catch {
         // re-throw but avoid breaking the notifications
@@ -293,6 +296,7 @@ export const createStoreFromBuilder = <T extends {}>(
 
         propValueMap.set(internals.currentConsumerId, value);
       },
+      // eslint-disable-next-line @typescript-eslint/max-params
       set: (target, prop, value, _receiver, isNewProperty, oldArrayLength) => {
         if (oldArrayLength !== undefined && typeof value === "number" && value < oldArrayLength) {
           for (let i = value; i < oldArrayLength; i++) {
@@ -582,10 +586,7 @@ export function createUseStore<T extends {}>(store: Store<T>) {
   function useStoreHook(): T;
   function useStoreHook<R>(selector: Selector<T, R>): R;
   function useStoreHook<R>(selector?: Selector<T, R>) {
-    if (selector) {
-      return useStore(store, selector);
-    }
-    return useStore(store);
+    return useStore(store, selector as Selector<T, R>);
   }
   return useStoreHook;
 }

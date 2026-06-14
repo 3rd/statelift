@@ -28,6 +28,7 @@ export const hasInternalSlots = (value: unknown): boolean => {
 
 export type ProxyCallbacks = {
   get: (target: {}, prop: string | symbol, receiver: {}, value: unknown) => void;
+  // eslint-disable-next-line @typescript-eslint/max-params
   set: (
     target: {},
     prop: string | symbol,

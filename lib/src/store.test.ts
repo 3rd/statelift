@@ -509,6 +509,7 @@ describe("ownKeys dependency tracking", () => {
     const { result } = renderHook(() =>
       useStoreWithRenderCount(store, (state) => {
         const keys: string[] = [];
+        // eslint-disable-next-line guard-for-in
         for (const key in state.data) {
           keys.push(key);
         }
@@ -778,6 +779,7 @@ describe("createUseStore", () => {
     const store = createStore({ count: 0, name: "test" });
     const useTestStore = createUseStore(store);
 
+    // eslint-disable-next-line functional/prefer-tacit
     const { result } = renderHook(() => useTestStore());
 
     expect(result.current).toEqual({ count: 0, name: "test" });
@@ -845,6 +847,7 @@ describe("persist option", () => {
     store.state.count = 5;
 
     // wait for microtask to flush
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((r) => setTimeout(r, 0));
 
     const saved = JSON.parse(localStorage.getItem("test-store")!);
@@ -881,6 +884,7 @@ describe("persist option", () => {
 
     store.state.user.name = "updated";
 
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((r) => setTimeout(r, 0));
 
     const saved = JSON.parse(localStorage.getItem("test-store-5")!);
@@ -892,6 +896,7 @@ describe("persist option", () => {
 
     store.state.items.push(4);
 
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((r) => setTimeout(r, 0));
 
     const saved = JSON.parse(localStorage.getItem("test-store-6")!);
@@ -911,6 +916,7 @@ describe("persist option", () => {
 
     store.state.increment();
 
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((r) => setTimeout(r, 0));
 
     const saved = JSON.parse(localStorage.getItem("test-store-7")!);

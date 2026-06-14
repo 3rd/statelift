@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES6",
+    "target": "ES2022",
     "module": "ESNext",
     "lib": ["DOM", "ESNext"],
+    "types": ["vitest/globals"],
     "importHelpers": false,
     "declaration": true,
     "sourceMap": true,
@@ -18,7 +19,6 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "jsx": "react-jsx",
     "esModuleInterop": true
   },

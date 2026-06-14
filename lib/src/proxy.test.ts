@@ -117,6 +117,7 @@ describe("createDeepProxy", () => {
     const proxy = createDeepProxy(target, { callbacks });
 
     const keys: string[] = [];
+    // eslint-disable-next-line guard-for-in
     for (const key in proxy) {
       keys.push(key);
     }
