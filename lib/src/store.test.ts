@@ -2,8 +2,9 @@
 /* eslint-disable no-param-reassign */
 import { useRef } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { vi } from "vitest";
-import { createConsumer, createStore, createUseStore, Selector, Store, useStore } from "./store";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import type { Selector, Store } from "./store";
+import { createConsumer, createStore, createUseStore, useStore } from "./store";
 
 type State = {
   top: number;
@@ -132,7 +133,7 @@ describe("createConsumer", () => {
   it("returns a proxy that wraps the store's state", () => {
     const store = createStore({ foo: { bar: "baz" } });
 
-    const callback = vi.fn();
+    const callback = mock();
     const consumer = createConsumer(store, callback);
 
     expect(consumer.proxy).toEqual(store.state);
@@ -141,7 +142,7 @@ describe("createConsumer", () => {
   it("calls the callback when the accessed data changes", () => {
     const store = createStore({ a: 1, b: 2 });
 
-    const callback = vi.fn();
+    const callback = mock();
     const consumer = createConsumer(store, callback);
 
     expect(consumer.proxy.a).toEqual(1);
@@ -159,7 +160,7 @@ describe("createConsumer", () => {
   it("does not call the callback when the accessed data is set to the same value", () => {
     const store = createStore({ a: 1, b: 2 });
 
-    const callback = vi.fn();
+    const callback = mock();
     const consumer = createConsumer(store, callback);
 
     expect(consumer.proxy.a).toEqual(1);
@@ -182,7 +183,7 @@ describe("createConsumer", () => {
       },
     });
 
-    const callback = vi.fn();
+    const callback = mock();
     const consumer = createConsumer(store, callback);
 
     store.state.a = 10;
@@ -199,7 +200,7 @@ describe("createConsumer", () => {
 
   it("destroys the consumer", () => {
     const store = createStore({ a: 1, b: 2 });
-    const consumer = createConsumer(store, vi.fn());
+    const consumer = createConsumer(store, mock());
 
     expect(consumer.proxy.a).toEqual(1);
 
@@ -398,19 +399,25 @@ for (const { type, create } of storeDefinitions) {
         // access store.items and store.items[index].id
         expect(result.current.state.items.length).toEqual(5);
         for (let i = 0; i < 5; i++) {
-          expect(result.current.state.items[i].id).toEqual(i);
+          const item = result.current.state.items[i];
+          if (!item) throw new Error("Expected item to exist");
+          expect(item.id).toEqual(i);
         }
         expect(result.current.count).toEqual(1);
 
         // mutate store.items[index].value (unwatched)
         act(() => {
-          store.state.items[0].value += 1;
+          const firstItem = store.state.items[0];
+          if (!firstItem) throw new Error("Expected first item to exist");
+          firstItem.value += 1;
         });
         expect(result.current.count).toEqual(1);
 
         // mutate store.items[index].id (watched)
         act(() => {
-          store.state.items[0].id += 1;
+          const firstItem = store.state.items[0];
+          if (!firstItem) throw new Error("Expected first item to exist");
+          firstItem.id += 1;
         });
         expect(result.current.count).toEqual(2);
       });

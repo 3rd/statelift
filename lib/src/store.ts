@@ -111,8 +111,10 @@ export const createStoreFromBuilder = <T extends {}>(
       let i = 0;
       while (i < rerenderQueue.length) {
         const id = rerenderQueue[i];
-        const callbacks = consumerCallbacksMap.get(id);
-        callbacks?.rerender();
+        if (id !== undefined) {
+          const callbacks = consumerCallbacksMap.get(id);
+          callbacks?.rerender();
+        }
         i++;
       }
       rerenderQueue.length = 0;
@@ -226,9 +228,9 @@ export const createStoreFromBuilder = <T extends {}>(
 
     // early bailout
     if (propValueMap && propValueMap.size > 0) {
-      const firstConsumerId = consumers.values().next().value;
-      if (firstConsumerId !== undefined) {
-        const representativeOldValue = propValueMap.get(firstConsumerId);
+      const firstConsumer = consumers.values().next();
+      if (!firstConsumer.done) {
+        const representativeOldValue = propValueMap.get(firstConsumer.value);
         if (Object.is(representativeOldValue, value)) {
           // value unchanged for all consumers - skip
           if (isNewProperty) notifyOwnKeysConsumers(target);
@@ -582,7 +584,12 @@ export const batch = <T extends {}, R>(store: Store<T>, fn: () => R): R => {
  * const state = useEditorStore(); // full state
  * const count = useEditorStore(s => s.count); // with selector
  */
-export function createUseStore<T extends {}>(store: Store<T>) {
+export function createUseStore<T extends {}>(
+  store: Store<T>,
+): {
+  (): T;
+  <R>(selector: Selector<T, R>): R;
+} {
   function useStoreHook(): T;
   function useStoreHook<R>(selector: Selector<T, R>): R;
   function useStoreHook<R>(selector?: Selector<T, R>) {

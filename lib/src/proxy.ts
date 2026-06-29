@@ -3,7 +3,7 @@ const UNWRAP_PROXY_KEY = Symbol("unwrapped-target");
 
 const BUILT_IN_OBJECTS = [Map, Set, WeakMap, WeakSet, Date, RegExp, ArrayBuffer, Promise] as const;
 
-export const WELL_KNOWN_SYMBOLS = new Set(
+export const WELL_KNOWN_SYMBOLS: Set<symbol> = new Set<symbol>(
   Object.getOwnPropertyNames(Symbol)
     .map((key) => Symbol[key as keyof SymbolConstructor])
     .filter((value): value is symbol => typeof value === "symbol"),
@@ -199,7 +199,7 @@ export const createRootProxy = <T extends {}>(
     callbacks: ProxyCallbacks;
     strict?: boolean;
   },
-) => {
+): T => {
   const skeleton = {} as T;
   const root = createDeepProxy(skeleton, {
     callbacks: options?.callbacks,

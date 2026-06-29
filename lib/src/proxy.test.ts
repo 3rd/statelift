@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-magic-numbers */
 /* eslint-disable no-param-reassign */
-import { vi } from "vitest";
-import { createDeepProxy, createRootProxy, ProxyCallbacks, unwrapDeepProxy, unwrapProxy } from "./proxy";
+import { describe, expect, it, mock } from "bun:test";
+import type { ProxyCallbacks } from "./proxy";
+import { createDeepProxy, createRootProxy, unwrapDeepProxy, unwrapProxy } from "./proxy";
 
 describe("createDeepProxy", () => {
   it("creates a deep proxy for the target object", () => {
@@ -16,7 +17,7 @@ describe("createDeepProxy", () => {
 
   it("retrieves the value and calls the get callback when a property is accessed", () => {
     const target = { foo: "boo", bar: { baz: "zoo" } };
-    const callbacks: Partial<ProxyCallbacks> = { get: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { get: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -32,7 +33,7 @@ describe("createDeepProxy", () => {
 
   it("mutates the target and calls the set callback when a property is set", () => {
     const target = { foo: "boo", bar: { baz: "zoo" } };
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -67,7 +68,7 @@ describe("createDeepProxy", () => {
 
   it("mutates the target and calls the delete callback on property delete", () => {
     const target: { foo?: string; bar?: { baz?: string } } = { foo: "boo", bar: { baz: "zoo" } };
-    const callbacks: Partial<ProxyCallbacks> = { deleteProperty: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { deleteProperty: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -101,7 +102,7 @@ describe("createDeepProxy", () => {
 
   it("calls the ownKeys callback when Object.keys() is used", () => {
     const target = { foo: "boo", bar: "baz" };
-    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -112,7 +113,7 @@ describe("createDeepProxy", () => {
 
   it("calls the ownKeys callback when for...in loop is used", () => {
     const target = { foo: "boo", bar: "baz" };
-    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -127,7 +128,7 @@ describe("createDeepProxy", () => {
 
   it("calls the ownKeys callback when spread operator is used", () => {
     const target = { foo: "boo", bar: "baz" };
-    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -138,7 +139,7 @@ describe("createDeepProxy", () => {
 
   it("passes isNewProperty=true when setting a new property", () => {
     const target: { foo: string; newProp?: string } = { foo: "boo" };
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -156,7 +157,7 @@ describe("createDeepProxy", () => {
 
   it("passes isNewProperty=false when updating an existing property", () => {
     const target = { foo: "boo" };
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -167,7 +168,7 @@ describe("createDeepProxy", () => {
 
   it("passes oldArrayLength when truncating array via length property", () => {
     const target = [1, 2, 3, 4, 5];
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn(), ownKeys: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock(), ownKeys: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -178,7 +179,7 @@ describe("createDeepProxy", () => {
 
   it("passes oldArrayLength but does not call ownKeys when expanding array", () => {
     const target = [1, 2, 3];
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn(), ownKeys: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock(), ownKeys: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -191,7 +192,7 @@ describe("createDeepProxy", () => {
 
   it("passes oldArrayLength but does not call ownKeys when setting length to same value", () => {
     const target = [1, 2, 3];
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn(), ownKeys: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock(), ownKeys: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -204,7 +205,7 @@ describe("createDeepProxy", () => {
 
   it("calls ownKeys callback when array is truncated", () => {
     const target = [1, 2, 3, 4, 5];
-    const callbacks: Partial<ProxyCallbacks> = { ownKeys: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { ownKeys: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -282,7 +283,7 @@ describe("createRootProxy", () => {
 describe("has trap", () => {
   it("calls get callback when 'in' operator is used", () => {
     const target = { foo: "bar", nested: { a: 1 } };
-    const callbacks: Partial<ProxyCallbacks> = { get: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { get: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -297,7 +298,7 @@ describe("has trap", () => {
 
   it("tracks 'in' operator on nested objects", () => {
     const target = { nested: { exists: true } };
-    const callbacks: Partial<ProxyCallbacks> = { get: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { get: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -310,7 +311,7 @@ describe("has trap", () => {
 describe("defineProperty trap", () => {
   it("calls set callback when Object.defineProperty is used", () => {
     const target: { foo: string; defined?: string } = { foo: "bar" };
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -334,7 +335,7 @@ describe("defineProperty trap", () => {
 
   it("passes isNewProperty=false when redefining existing property", () => {
     const target = { existing: "old" };
-    const callbacks: Partial<ProxyCallbacks> = { set: vi.fn() };
+    const callbacks: Partial<ProxyCallbacks> = { set: mock() };
 
     const proxy = createDeepProxy(target, { callbacks });
 
@@ -470,7 +471,9 @@ describe("unwrapDeepProxy", () => {
 
     // verify structure is fully unwrapped
     expect(unwrapProxy(result.meta.nested.deep)).toBe(result.meta.nested.deep);
-    expect(unwrapProxy(result.users[0])).toBe(result.users[0]);
+    const firstUser = result.users[0];
+    if (!firstUser) throw new Error("Expected first user to exist");
+    expect(unwrapProxy(firstUser)).toBe(firstUser);
   });
 
   it("handles empty objects and arrays", () => {
