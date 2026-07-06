@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useSyncExternalStore } from "react";
-import { createRootProxy, hasInternalSlots, unwrapProxy, WELL_KNOWN_SYMBOLS } from "./proxy";
+import {
+  createRootProxy,
+  hasInternalSlots,
+  UNWRAP_PROXY_KEY,
+  unwrapProxy,
+  WELL_KNOWN_SYMBOLS,
+} from "./proxy";
 import { isFunction } from "./utils";
 
 export type Store<T extends {}> = {
@@ -437,6 +443,10 @@ export const createConsumer = <T extends {}>(store: Store<T>, onRerender: () => 
 
   const handlers: ProxyHandler<{}> = {
     get(target, prop, receiver) {
+      if (prop === UNWRAP_PROXY_KEY) {
+        return Reflect.get(target, prop, receiver);
+      }
+
       // skip well-known symbols
       if (typeof prop === "symbol" && WELL_KNOWN_SYMBOLS.has(prop)) {
         return Reflect.get(target, prop, receiver);

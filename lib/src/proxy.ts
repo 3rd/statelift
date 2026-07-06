@@ -1,5 +1,5 @@
 /* eslint-disable no-param-reassign */
-const UNWRAP_PROXY_KEY = Symbol("unwrapped-target");
+export const UNWRAP_PROXY_KEY: unique symbol = Symbol("unwrapped-target");
 
 const BUILT_IN_OBJECTS = [Map, Set, WeakMap, WeakSet, Date, RegExp, ArrayBuffer, Promise] as const;
 
@@ -48,8 +48,10 @@ export const unwrapProxy = <T extends {}>(object: T, deep = false): T => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let unwrapped = (object as unknown as { [UNWRAP_PROXY_KEY]: T })[UNWRAP_PROXY_KEY] as any;
   if (deep) {
-    while (unwrapped && unwrapped[UNWRAP_PROXY_KEY]) {
-      unwrapped = unwrapped[UNWRAP_PROXY_KEY];
+    let next = unwrapped?.[UNWRAP_PROXY_KEY];
+    while (next && next !== unwrapped) {
+      unwrapped = next;
+      next = unwrapped[UNWRAP_PROXY_KEY];
     }
   }
   return unwrapped ?? object;

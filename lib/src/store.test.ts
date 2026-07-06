@@ -931,3 +931,49 @@ describe("persist option", () => {
     expect(saved.increment).toBeUndefined();
   });
 });
+
+describe("writes through consumer proxies", () => {
+  it("terminates and notifies when writing to a nested object through the consumer proxy", () => {
+    const store = createSimpleStore();
+
+    const callback = mock();
+    const consumer = createConsumer(store, callback);
+
+    expect(consumer.proxy.nested.a).toEqual(3);
+    expect(callback).toHaveBeenCalledTimes(0);
+
+    consumer.proxy.nested.a = 42;
+
+    expect(store.state.nested.a).toEqual(42);
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    consumer.destroy();
+  });
+
+  it("terminates and re-renders when writing through the state returned by useStore", () => {
+    const store = createSimpleStore();
+
+    let renderCount = 0;
+    const { result } = renderHook(() => {
+      renderCount++;
+      const state = useStore(store);
+      return { state, a: state.nested.a };
+    });
+    expect(renderCount).toEqual(1);
+    expect(result.current.a).toEqual(3);
+
+    act(() => {
+      result.current.state.nested.a = 42;
+    });
+
+    expect(store.state.nested.a).toEqual(42);
+    expect(result.current.a).toEqual(42);
+    expect(renderCount).toEqual(2);
+
+    // writing the same value again must not re-render
+    act(() => {
+      result.current.state.nested.a = 42;
+    });
+    expect(renderCount).toEqual(2);
+  });
+});
