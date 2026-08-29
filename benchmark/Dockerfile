@@ -1,10 +1,12 @@
-FROM node:20-bookworm
+FROM node:22.20.0-bookworm
 
-RUN apt-get update && apt-get install -y \
-  wget \
-  gnupg \
+ARG BUN_VERSION=1.4.0
+ARG HARNESS_COMMIT=a0d4d1dd9b3f20d3c5c9a451fb3ba09935d7834a
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   fonts-liberation \
+  git \
   libasound2 \
   libatk-bridge2.0-0 \
   libatk1.0-0 \
@@ -21,39 +23,67 @@ RUN apt-get update && apt-get install -y \
   libxfixes3 \
   libxkbcommon0 \
   libxrandr2 \
+  wget \
   xdg-utils \
   && rm -rf /var/lib/apt/lists/*
 
-# chrome
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+RUN wget -q \
+    "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
+    -O /tmp/google-chrome-stable.deb \
   && apt-get update \
-  && apt-get install -y google-chrome-stable \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends /tmp/google-chrome-stable.deb \
+  && rm -rf /tmp/google-chrome-stable.deb /var/lib/apt/lists/*
 
-WORKDIR /app
-
-# clone js-framework-benchmark
-RUN git clone --depth 1 https://github.com/krausest/js-framework-benchmark.git /app/js-framework-benchmark
+RUN git init /app/js-framework-benchmark \
+  && cd /app/js-framework-benchmark \
+  && git remote add origin https://github.com/krausest/js-framework-benchmark.git \
+  && git fetch --depth 1 origin "$HARNESS_COMMIT" \
+  && git checkout --detach FETCH_HEAD \
+  && test "$(git rev-parse HEAD)" = "$HARNESS_COMMIT"
 
 WORKDIR /app/js-framework-benchmark
+RUN npm install --global "bun@$BUN_VERSION" \
+  && npm run install-local \
+  && cd frameworks/keyed/react-mobX \
+  && npm ci \
+  && npm run build-prod \
+  && cd ../legend-state \
+  && npm ci \
+  && npm run build-prod \
+  && cd ../react-zustand \
+  && npm ci \
+  && npm run build-prod
 
-# install dependencies
-RUN npm ci
-RUN npm run install-local
+RUN printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'exec /usr/bin/google-chrome --no-sandbox --disable-gpu --disable-dev-shm-usage "$@"' \
+  > /usr/local/bin/google-chrome \
+  && chmod +x /usr/local/bin/google-chrome \
+  && rm -rf \
+    /app/js-framework-benchmark/webdriver-ts/results \
+    /app/js-framework-benchmark/webdriver-ts/results.json \
+    /app/js-framework-benchmark/webdriver-ts/traces \
+  && mkdir -p \
+    /app/js-framework-benchmark/webdriver-ts/results \
+    /app/js-framework-benchmark/webdriver-ts/traces \
+    /app/js-framework-benchmark/webdriver-ts-results/dist \
+    /work \
+    /tmp/benchmark-home \
+  && chmod 777 \
+    /app/js-framework-benchmark/frameworks/keyed \
+    /app/js-framework-benchmark/webdriver-ts \
+    /app/js-framework-benchmark/webdriver-ts/results \
+    /app/js-framework-benchmark/webdriver-ts/traces \
+    /app/js-framework-benchmark/webdriver-ts-results \
+    /app/js-framework-benchmark/webdriver-ts-results/dist \
+    /app/js-framework-benchmark/webdriver-ts-results/node_modules \
+    /app/js-framework-benchmark/webdriver-ts-results/src \
+    /tmp/benchmark-home \
+    /work \
+  && chmod 666 /app/js-framework-benchmark/webdriver-ts-results/src/results.ts
 
-# prep dirs
-RUN chmod -R 777 /app/js-framework-benchmark/frameworks/keyed
-RUN chmod -R 777 /app/js-framework-benchmark/webdriver-ts
-RUN chmod -R 777 /app/js-framework-benchmark/webdriver-ts-results
-
-# create chrome wrapper with sandbox disabled
-RUN echo '#!/bin/bash\nexec /usr/bin/google-chrome-stable --no-sandbox --disable-gpu --disable-dev-shm-usage "$@"' > /usr/local/bin/google-chrome \
-  && chmod +x /usr/local/bin/google-chrome
-
-# copy runner
 COPY --chmod=755 run-benchmark-internal.sh /app/run-benchmark.sh
 
-EXPOSE 8080
-
+ENV HOME=/tmp/benchmark-home
+ENV CHROME_BINARY=/usr/local/bin/google-chrome
 CMD ["/app/run-benchmark.sh"]
